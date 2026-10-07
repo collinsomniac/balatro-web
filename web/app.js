@@ -298,6 +298,29 @@ async function scanComputer() {
     status(`Found ${j.files.length} on ${j.host}.`);
   } catch (e) { status('Could not reach that address: ' + e.message); }
 }
+// Used by the "from my computer" card and by the dev channel: pull the newest game file the helper offers.
+async function loadGame(base, rel) {
+  base = (base || $('src').value || prefs.src || '').trim().replace(/\/$/, '');
+  if (!base) { status('Set your computer address first.'); return false; }
+  prefs.src = base; $('src').value = base;
+  UI.show('loading');
+  try {
+    UI.stage(2, 'Looking on your computer…', base);
+    const j = await fetch(base + '/manifest.json', { cache: 'no-store' }).then((r) => r.json());
+    let f = rel ? j.files.find((x) => x.rel === rel) : null;
+    if (!f) f = j.files.find((x) => /\.(exe|love)$/i.test(x.name)) || j.files[0];
+    if (!f) throw new Error('no game file found in that folder');
+    const u8 = await fetchWithProgress(base + '/' + f.rel, (p, got, total) =>
+      UI.stage(2 + p * 50, 'Downloading ' + f.name, `${mb(got)} of ${mb(total)}`));
+    UI.stage(54, 'Checking file…', '');
+    const ver = await importBytes(u8, f.name);
+    log(`imported ${f.name} (game ${ver})`);
+    await preloadEngine().catch(() => {});
+    await showReady();
+    return true;
+  } catch (e) { UI.stage(0, 'Could not load from your computer', e.message); log('load game failed: ' + e.message); return false; }
+}
+
 async function downloadFrom(base, f) {
   UI.show('loading'); UI.stage(2, 'Downloading ' + f.name, 'from ' + base);
   try {
@@ -407,7 +430,8 @@ $('showperf').checked = prefs.perf; $('perf').classList.toggle('hidden', !prefs.
 $('showperf').addEventListener('change', (e) => { prefs.perf = e.target.checked; $('perf').classList.toggle('hidden', !e.target.checked); });
 $('skipsplash').checked = prefs.skipsplash;
 $('skipsplash').addEventListener('change', (e) => { prefs.skipsplash = e.target.checked; Bridge.send('opts', { fps_cap: 60, skip_splash: e.target.checked }); });
-$('src').value = prefs.src || (isDev ? 'https://desktop-3rsf4r5.tailce70fb.ts.net' : '');
+$('src').value = qs.get('src') || prefs.src || (isDev ? 'https://desktop-3rsf4r5.tailce70fb.ts.net' : '');
+if (qs.get('src')) prefs.src = qs.get('src');
 if ('serviceWorker' in navigator && !isDev) navigator.serviceWorker.register('sw.js').catch(() => {});
 // Testing channel: with ?dev=TOKEN the page reports its log to your computer and takes commands from it,
 // so the agent can drive and screenshot this page even when nothing runs on the phone.
@@ -421,7 +445,8 @@ if (isDev) {
   log('dev channel → ' + base);
 }
 
-window.BalatroApp = { play, exportSaves, flushSaves, scanComputer, get quality() { return quality; } };
+window.BalatroApp = { play, loadGame, exportSaves, flushSaves, scanComputer, resetProgress,
+  get quality() { return quality; }, get started() { return started; } };
 
 (async function boot() {
   if (isDev && qs.has('devgame') && (!(await idb.get('game.meta')) || qs.has('reload'))) {
