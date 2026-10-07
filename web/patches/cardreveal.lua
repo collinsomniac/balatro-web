@@ -207,9 +207,17 @@ function CR.update_shop_button()
     return
   end
   if CR.btn then return end
-  local anchor = G.HUD.get_UIE_by_ID and G.HUD:get_UIE_by_ID('cg_reroll_anchor')
-  local node = anchor or (G.HUD.get_UIE_by_ID and G.HUD:get_UIE_by_ID('next_round_button'))
-  if node then CR.btn = CR.button_box(node) end
+  -- the shop's buttons live in G.shop (built by Game:update_shop), not in the HUD
+  local node
+  for _, parent in ipairs({ G.shop, G.HUD, G.OVERLAY_MENU }) do
+    if not node and parent and parent.get_UIE_by_ID then
+      node = parent:get_UIE_by_ID('cg_reroll_anchor') or parent:get_UIE_by_ID('next_round_button')
+    end
+  end
+  if node then
+    CR.btn = CR.button_box(node)
+    if __WEB then __WEB.emit('reveal', 'shop button placed') end
+  end
 end
 
 -- ---------- install hooks ----------

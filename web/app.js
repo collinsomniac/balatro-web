@@ -224,6 +224,7 @@ async function play() {
   quality = parseFloat($('quality').value); prefs.quality = quality;
   try { navigator.wakeLock && (window.__wake = await navigator.wakeLock.request('screen')); } catch {}
   UI.body(true); fitCanvas();
+  CardLab.warm().then(() => CardLab.showAgent());   // warm a session while the game boots
 
   const canvas = $('canvas');
   canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); log('graphics context lost'); started = false; UI.body(false); UI.show('ready'); }, false);
@@ -498,6 +499,29 @@ function extractJson(text) {
 
 const CardLab = window.BalatroCardLab = {
   last: null,
+  agent: null,                 // what the player's computer actually runs (discovered, not assumed)
+  // Ask the helper to warm a session and tell us which model it really uses. Cheap (a one-word answer).
+  async warm(provider, force) {
+    const base = this.base;
+    if (!base) return null;
+    provider = provider || $('provider').value;
+    try {
+      const t0 = performance.now();
+      const r = await fetch(`${base}/warm?provider=${provider}${force ? '&force=1' : ''}`, { cache: 'no-store' });
+      const j = await r.json();
+      if (j.error && !j.model) { log('warm: ' + j.error); return null; }
+      this.agent = j;
+      localStorage.setItem('bw.agent.' + provider, JSON.stringify(j));
+      const label = `${provider === 'claude' ? 'Claude Code' : 'Codex'} · ${j.model} · effort ${j.effort}`;
+      if ($('genstatus') && !this.busy) $('genstatus').textContent = 'Ready — ' + label;
+      log(`warm ${provider}: ${j.model} / ${j.effort} in ${Math.round(performance.now() - t0)}ms`);
+      return j;
+    } catch (e) { log('warm failed: ' + e.message); return null; }
+  },
+  showAgent() {
+    const j = this.agent || (() => { try { return JSON.parse(localStorage.getItem('bw.agent.' + $('provider').value) || 'null'); } catch { return null; } })();
+    if (j && j.model) $('gmodel').placeholder = j.model + ' (detected)';
+  },
   get base() { return ($('src').value || prefs.src || '').trim().replace(/\/$/, ''); },
   async generate(topic, opts = {}) {
     topic = (topic ?? $('topic').value ?? '').trim();
@@ -556,12 +580,14 @@ const CardLab = window.BalatroCardLab = {
   },
 };
 $('provider').addEventListener('change', () => {
+  CardLab.showAgent(); CardLab.warm($('provider').value);
   $('gmodel').value = localStorage.getItem('bw.model.' + $('provider').value) || '';
 });
 $('fastgen').checked = localStorage.getItem('bw.fast') !== '0';
 $('gmodel').value = localStorage.getItem('bw.model.' + $('provider').value) || '';
 $('topic').addEventListener('input', () => Bridge.send('settopic', { topic: $('topic').value || 'something from this run' }));
 $('generate').addEventListener('click', () => CardLab.generate());
+setTimeout(() => { if (prefs.src) CardLab.warm().then(() => CardLab.showAgent()); }, 2500);
 $('sendgame').addEventListener('click', () => CardLab.sendToGame());
 
 })();
