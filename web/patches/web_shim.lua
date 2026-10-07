@@ -208,6 +208,9 @@ WEB.handlers.viewport = function(d)
   emit('viewport', string.format('{"w":%d,"h":%d,"deferred":%s}', w, h, tostring(not WEB.booted)))
 end
 
+-- 7c. Generated cards (LLM-designed jokers) ride along if the loader supplied them.
+if love.filesystem and love.filesystem.getInfo('cardgen.lua') then pcall(require, 'cardgen') end
+
 -- 8. JS -> Lua: Module.love_send_event('web', json) -> love.userevent -> love.handlers.web(json).
 -- Minimal JSON decoder (objects, arrays, strings, numbers, bools, null).
 local function json_decode(s)

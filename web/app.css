@@ -57,3 +57,10 @@ dialog menu { display: flex; justify-content: space-between; padding: 0; margin:
 #chip { position: fixed; z-index: 11; left: 50%; transform: translateX(-50%); bottom: max(8px, env(safe-area-inset-bottom));
   background: #000a; color: #cfe; font: 12px/1.35 ui-monospace, monospace; padding: 5px 9px; border-radius: 8px; }
 .fs { background: #f5b14322; border: 1px solid #f5b143; border-radius: 10px; padding: 8px 10px; max-width: min(620px, 90vw); color: #ffe9c2; }
+
+#lab { max-width: min(680px, 92vw); text-align: left; background: #0006; border: 1px solid #456; border-radius: 12px; padding: 10px 14px; }
+#lab summary { cursor: pointer; color: var(--blue); font-weight: 700; }
+.result { max-height: 26vh; overflow: auto; font: 12px/1.4 ui-monospace, monospace; background: #0009; padding: 8px; border-radius: 8px; white-space: pre-wrap; }
+.cardface { background: linear-gradient(#2b4a8f, #16233f); border: 3px solid #cfd8e8; border-radius: 10px; padding: 10px; margin: 8px 0; }
+.cardface b { display: block; color: #fff; font-size: 17px; }
+.cardface i { color: #ffe9a8; font-style: normal; }

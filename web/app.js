@@ -83,13 +83,14 @@ async function importBytes(u8, name) {
 
 /* ---------- patching: exact-match, fails loudly ---------- */
 async function loadPatchSet() {
-  const [set, shim] = await Promise.all([
+  const [set, shim, cardgen] = await Promise.all([
     fetch('patches/balatro-1.0.1.json', { cache: 'no-cache' }).then((r) => r.json()),
     fetch('patches/web_shim.lua', { cache: 'no-cache' }).then((r) => r.text()),
+    fetch('patches/cardgen.lua', { cache: 'no-cache' }).then((r) => r.text()),
   ]);
-  return { set, shim };
+  return { set, shim, cardgen };
 }
-function applyPatches(files, { set, shim }) {
+function applyPatches(files, { set, shim, cardgen }) {
   const dec = new TextDecoder(), enc = new TextEncoder();
   const ver = dec.decode(files['version.jkr'] || new Uint8Array()).split('\n')[0];
   if (!ver.startsWith(set.game_version_prefix)) log(`warning: game ${ver}, patches target ${set.game_version_prefix}x`);
@@ -102,7 +103,8 @@ function applyPatches(files, { set, shim }) {
     texts[p.file] = s.replace(p.find, () => p.replace);
   }
   for (const [f, s] of Object.entries(texts)) files[f] = enc.encode(s);
-  files['web_shim.lua'] = enc.encode(shim);          // shipped as part of the overlay archive
+  files['web_shim.lua'] = enc.encode(shim);
+  files['cardgen.lua'] = enc.encode(cardgen);        // generated-card runtime
   return ver;
 }
 
@@ -151,7 +153,11 @@ const Bridge = window.BalatroBridge = {
     if (kind === 'perf') { try { lastPerf = JSON.parse(payload); } catch {} if (isDev) log('perf ' + payload); }
     else if (kind === 'boot') { log('engine boot ' + payload); }
     else if (kind === 'viewport') { log('viewport ' + payload); }
-    else if (kind === 'shot') { if (isDev) fetch('/__shot', { method: 'POST', body: 'data:image/png;base64,' + payload }).then(() => log('shot ok ' + payload.length)); }
+    else if (kind === 'shot') {
+      const body = 'data:image/png;base64,' + payload;
+      const url = isDev ? '/__shot' : (window.BW_DEV ? window.BW_DEV.base + '/shot?token=' + encodeURIComponent(window.BW_DEV.token) : null);
+      if (url) fetch(url, { method: 'POST', body }).then(() => log('shot sent (' + payload.length + ' bytes)')).catch((e) => log('shot failed ' + e));
+    }
     else if (kind === 'sync') flushSaves('lua');
     else if (kind === 'error') {
       console.error('LUA ERROR ' + payload);
@@ -403,7 +409,17 @@ $('skipsplash').checked = prefs.skipsplash;
 $('skipsplash').addEventListener('change', (e) => { prefs.skipsplash = e.target.checked; Bridge.send('opts', { fps_cap: 60, skip_splash: e.target.checked }); });
 $('src').value = prefs.src || (isDev ? 'https://desktop-3rsf4r5.tailce70fb.ts.net' : '');
 if ('serviceWorker' in navigator && !isDev) navigator.serviceWorker.register('sw.js').catch(() => {});
-if (isDev) { const s = document.createElement('script'); s.src = '/dev/beacon.js'; document.head.appendChild(s); }
+// Testing channel: with ?dev=TOKEN the page reports its log to your computer and takes commands from it,
+// so the agent can drive and screenshot this page even when nothing runs on the phone.
+const devToken = qs.get('dev');
+if (isDev) {
+  const s = document.createElement('script'); s.src = '/dev/beacon.js'; document.head.appendChild(s);
+} else if (devToken && (prefs.src || qs.get('src'))) {
+  const base = (qs.get('src') || prefs.src || '').trim().replace(/\/$/, '');
+  window.BW_DEV = { base, token: devToken, id: TAG };
+  const s = document.createElement('script'); s.src = 'beacon.js'; document.head.appendChild(s);
+  log('dev channel → ' + base);
+}
 
 window.BalatroApp = { play, exportSaves, flushSaves, scanComputer, get quality() { return quality; } };
 
@@ -416,3 +432,83 @@ window.BalatroApp = { play, exportSaves, flushSaves, scanComputer, get quality()
   if (qs.has('autoplay')) await play();
 })();
 })();
+
+/* ---------- card lab: LLM-designed jokers, generated on the player's own computer ---------- */
+const OPS = ['add_mult','add_chips','xmult','add_money','add_hand_size','add_discards','add_hands',
+  'mult_per_played_card','mult_per_face','mult_per_suit','xmult_per_joker','xmult_per_money',
+  'scale_mult','scale_chips'];
+const CONDS = ['hand_type','suit_count','face_count','rank_count','cards_played_at_least','money_at_least',
+  'money_at_most','discards_left_at_most','hands_left_at_most','jokers_at_least','deck_size_at_least',
+  'every_nth','probability','always'];
+
+function validateCard(spec) {
+  const errs = [];
+  if (!spec || typeof spec !== 'object') return ['not an object'];
+  if (!spec.name || typeof spec.name !== 'string') errs.push('name missing');
+  if (!spec.effect || !Array.isArray(spec.effect.effects) || !spec.effect.effects.length) errs.push('no effects');
+  for (const e of (spec.effect && spec.effect.effects) || []) if (!OPS.includes(e.op)) errs.push('unknown op ' + e.op);
+  for (const c of (spec.effect && spec.effect.conditions) || []) if (!CONDS.includes(c.type)) errs.push('unknown condition ' + c.type);
+  if (!Array.isArray(spec.text)) errs.push('text should be an array of lines');
+  return errs;
+}
+function extractJson(text) {
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const body = fence ? fence[1] : text;
+  const i = body.indexOf('{'), j = body.lastIndexOf('}');
+  if (i < 0 || j < i) throw new Error('the agent did not return JSON');
+  return JSON.parse(body.slice(i, j + 1));
+}
+
+const CardLab = window.BalatroCardLab = {
+  last: null,
+  get base() { return ($('src').value || prefs.src || '').trim().replace(/\/$/, ''); },
+  async generate(topic, opts = {}) {
+    topic = (topic ?? $('topic').value ?? '').trim();
+    if (!topic) { $('genstatus').textContent = 'Type a topic first.'; return null; }
+    const provider = opts.provider || $('provider').value;
+    const allowWeb = opts.allow_web ?? $('useweb').checked;
+    const base = this.base;
+    if (!base) { $('genstatus').textContent = 'Set your computer address in the setup screen first.'; return null; }
+    $('genstatus').textContent = `Asking ${provider} on your computer… (this takes a few seconds)`;
+    $('cardresult').textContent = '';
+    $('sendgame').disabled = true;
+    try {
+      const skill = await fetch('cardgen/PROMPT.md', { cache: 'no-cache' }).then((r) => r.text());
+      const prompt = skill + '\n\n---\n\nThe topic is: **' + topic + '**\n\nReturn only the JSON object.';
+      const res = await fetch(base + '/gen', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, prompt, allow_web: allowWeb, timeout: 300 }) });
+      const json = await res.json();
+      if (json.error) throw new Error(json.error);
+      const spec = extractJson(json.text || '');
+      const errs = validateCard(spec);
+      this.last = spec;
+      const lines = (spec.text || []).map((t) => t.replace(/\{C:[^}]+\}/g, ' — ')).join('\n');
+      $('cardresult').innerHTML = '';
+      const face = document.createElement('div');
+      face.className = 'cardface';
+      face.innerHTML = '<b></b><i></i>';
+      face.querySelector('b').textContent = spec.name + '  ·  ' + '★'.repeat(spec.rarity || 1) + '  ·  $' + (spec.cost ?? 4);
+      face.querySelector('i').textContent = lines;
+      $('cardresult').appendChild(face);
+      $('genstatus').textContent = (errs.length ? 'Issues: ' + errs.join('; ') : 'Looks valid') +
+        ` · ${json.seconds}s · ${provider}`;
+      $('cardresult').appendChild(Object.assign(document.createElement('pre'), { textContent: JSON.stringify(spec, null, 2) }));
+      $('sendgame').disabled = !!(errs.length);
+      log('card generated: ' + spec.name + ' (' + (json.seconds) + 's)');
+      return spec;
+    } catch (e) {
+      $('genstatus').textContent = 'Generation failed: ' + e.message;
+      log('card generation failed: ' + e.message);
+      return null;
+    }
+  },
+  sendToGame() {
+    if (!this.last) return;
+    if (!started) { $('genstatus').textContent = 'Start the game first (Tap to play).'; return; }
+    Bridge.send('cardadd', this.last);
+    $('genstatus').textContent = 'Sent to the game — check your Joker area.';
+    log('card sent to game: ' + this.last.name);
+  },
+};
+$('generate').addEventListener('click', () => CardLab.generate());
+$('sendgame').addEventListener('click', () => CardLab.sendToGame());

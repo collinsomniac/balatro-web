@@ -74,6 +74,20 @@
   <p id="gameinfo" class="hint"></p>
   <p id="fs" class="fs hidden">Safari's address bar costs a lot of screen. For true full-screen:
   <b>Share → Add to Home Screen</b>, then open Balatro from your Home Screen.</p>
+  <details id="lab">
+    <summary>Card lab — generate a new Joker</summary>
+    <p class="hint">Describe anything: a Wikipedia link, a phrase, something personal. Your computer's local
+    agent designs a card in Balatro's style, then it drops straight into the running game.</p>
+    <label class="sr">Topic <input id="topic" placeholder="the Fibonacci sequence" enterkeyhint="send"></label>
+    <div class="row small">
+      <label>Agent <select id="provider"><option value="claude">Claude Code</option><option value="codex">Codex</option></select></label>
+      <label><input type="checkbox" id="useweb"> research it first</label>
+      <button id="generate" class="btn primary">Generate card</button>
+      <button id="sendgame" class="btn" disabled>Send to game</button>
+    </div>
+    <p id="genstatus" class="status"></p>
+    <pre id="cardresult" class="result"></pre>
+  </details>
   <div class="row small">
     <button id="settings" class="link">Keys &amp; co-op</button>
     <button id="export" class="link">Export saves</button>
