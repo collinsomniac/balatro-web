@@ -43,3 +43,18 @@
 - **Lua 5.4 vs 5.1 (same Emscripten):** 3M-iteration loop 35 ms (5.4) vs 22 ms (5.1); math loop 8 ms vs 10 ms. Net: keep 5.1. Lua 5.4 would also risk `string.format('%d', float)` errors.
 - **Audio:** `love.audio` present, 9 sources playing, volume 50/100/100, 80 sound files, not muted — i.e. the game's side works. The page's AudioContext reported `interrupted` because the preview had no genuine gesture (and the phone's audio session was held by the recorder). Added the iOS unlock (silent buffer inside the first real tap). Needs a check with a real tap.
 - **Next big lever:** stop unzipping the whole 53 MB archive in JS at every launch — store the original `.love`/exe-zip in MEMFS as the game source, extract only the ~8 patched files, and mount that as an overlay archive (`love.filesystem.mount`). Saves ~1 s of startup and a large slice of memory. After that: real threads (pthreads build + COOP/COEP headers) to move save compression off the main thread, which is the likely cause of the remaining in-game hitches.
+
+
+## 2026-10-06 (late) — freeze diagnosed and fixed
+Symptoms: engine started, Balatro's own loading bar showed, then the frame froze (page rAF still 120 fps, no Lua ticks).
+Two independent causes, both mine:
+1. **Stale engine from the service worker.** Its cache name never changed and `.wasm` was cache-first, so a brief
+   experiment with a Lua 5.4 runtime left Safari using that wasm together with the new loader — a mismatched pair.
+   Fixed: the SW is now network-first for everything (cache only as an offline fallback) and the cache version is bumped.
+2. **A resize loop.** The shell nudged `love.window.updateMode` whenever the viewport changed, and Safari's
+   collapsing toolbar changes it constantly, so the game rebuilt its canvases endlessly and froze on the last frame.
+   Fixed: the browser owns the canvas size (SDL already resizes it and fires `love.resize`, which the game handles);
+   the shim now only records the viewport, with a single throttled nudge 3 s after boot if the size is genuinely wrong,
+   and never calls `love.resize` by hand. Canvas CSS uses `100vh`, not `100dvh`, so the toolbar cannot retrigger it.
+Also added: error banner, live state chip, "Copy details" diagnostics, "show the game anyway" after 12 s, and a
+25 s engine-silence watchdog.
