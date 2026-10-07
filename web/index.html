@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Balatro Web">
+<meta name="theme-color" content="#1b2a33">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<title>Balatro Web</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+
+<div id="shell" class="panel">
+  <h1>Balatro <span>web</span></h1>
+  <p class="sub">Plays <b>your own copy</b> of Balatro in the browser. Nothing from the game is hosted here — you pick the file once, it's patched on this device and kept in this browser's storage.</p>
+
+  <div id="step-file" class="step">
+    <label class="btn primary" for="file">Choose Balatro.exe or game.love</label>
+    <input id="file" type="file" accept=".exe,.love,.zip,application/octet-stream" hidden>
+    <p class="hint">Steam: <code>steamapps/common/Balatro/Balatro.exe</code>. AirDrop it to Files, then pick it here.</p>
+  </div>
+
+  <div id="step-play" class="step hidden">
+    <button id="play" class="btn primary big">▶ Tap to play</button>
+    <div class="row">
+      <label>Quality
+        <select id="quality">
+          <option value="1">Battery (1×)</option>
+          <option value="1.5">Balanced (1.5×)</option>
+          <option value="2" selected>Sharp (2×)</option>
+          <option value="3">Native (3×)</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="showperf"> FPS overlay</label>
+    </div>
+    <div class="row small">
+      <button id="settings" class="link">Keys &amp; co-op</button>
+      <button id="export" class="link">Export saves</button>
+      <button id="forget" class="link danger">Forget game file</button>
+    </div>
+    <p id="gameinfo" class="hint"></p>
+  </div>
+
+  <p id="status" class="status"></p>
+  <p id="install" class="hint hidden">For true full-screen: <b>Share → Add to Home Screen</b>, then launch from the icon and turn your phone sideways.</p>
+</div>
+
+<div id="rotate" class="hidden"><div>↻<br>Turn your phone sideways</div></div>
+<div id="perf" class="hidden"></div>
+
+<dialog id="keys">
+  <form method="dialog">
+    <h2>Keys</h2>
+    <p class="hint">Only the <b>host</b> of a co-op room needs a key. It is stored <b>only in this browser</b> (localStorage) and sent only to OpenRouter, never to our server or other players.</p>
+    <label>OpenRouter API key <input id="k-openrouter" type="password" autocomplete="off" placeholder="sk-or-…"></label>
+    <label>Model <input id="k-model" placeholder="default"></label>
+    <menu><button value="clear" class="link danger">Clear</button><button value="save" class="btn primary">Save</button></menu>
+  </form>
+</dialog>
+
+<script src="vendor/fflate.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

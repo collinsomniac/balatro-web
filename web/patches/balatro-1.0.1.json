@@ -1,0 +1,32 @@
+{
+  "about": "Exact-match source patches applied IN THE PLAYER'S BROWSER to their own copy of Balatro 1.0.1x. Contains no game code beyond the short anchor strings needed to locate each edit.",
+  "game_version_prefix": "1.0.1",
+  "patches": [
+    {"file": "main.lua", "label": "load web shim first",
+     "find": "if (love.system.getOS() == 'OS X' ) and (jit.arch == 'arm64' or jit.arch == 'arm') then jit.off() end",
+     "replace": "require 'web_shim'"},
+    {"file": "main.lua", "label": "skip Steam (luasteam)",
+     "find": "if os == 'OS X' or os == 'Windows' then", "replace": "if false then"},
+    {"file": "main.lua", "label": "per-frame web tick",
+     "find": "    G:update(dt)\n", "replace": "    G:update(dt)\n    __WEB.tick(dt)\n"},
+    {"file": "main.lua", "label": "non-blocking error handler",
+     "find": "function love.errhand(msg)\n",
+     "replace": "function love.errhand(msg)\n\tif __WEB then __WEB.on_error(msg) return end\n"},
+    {"file": "globals.lua", "label": "web platform flags",
+     "find": "    self.F_MOBILE_UI = false\n",
+     "replace": "    self.F_MOBILE_UI = false\n    self.F_SOUND_THREAD = false\n    self.F_SAVE_TIMER = 5\n    self.F_CRASH_REPORTS = false\n    self.F_QUIT_BUTTON = false\n    self.F_VIDEO_SETTINGS = false\n    self.MIN_CLICK_DIST_WEB = true\n"},
+    {"file": "globals.lua", "label": "touch-friendly click distance",
+     "find": "    self.MIN_CLICK_DIST = 0.9\n", "replace": "    self.MIN_CLICK_DIST = 2.5\n"},
+    {"file": "game.lua", "label": "silence LONG DT spam",
+     "find": "if self.real_dt > 0.05 then print('LONG DT @ '..math.floor(G.TIMERS.REAL)..': '..self.real_dt) end",
+     "replace": "if self.real_dt > 0.05 then __WEB.long_dt(self.real_dt) end"},
+    {"file": "functions/button_callbacks.lua", "label": "high-DPI canvas on web",
+     "find": "    highdpi = (love.system.getOS() == 'OS X')",
+     "replace": "    highdpi = (love.system.getOS() == 'OS X') or (love.system.getOS() == 'Web')"},
+    {"file": "conf.lua", "label": "web window + save identity",
+     "find": "\tt.window.minheight = 100\n",
+     "replace": "\tt.window.minheight = 100\n\tt.identity = 'balatro-web'\n\tt.window.resizable = true\n\tt.window.highdpi = true\n"},
+    {"file": "resources/shaders/hologram.fs", "label": "GLSL ES constant loop bound",
+     "find": "int glow_samples = 4;", "replace": "const int glow_samples = 4;"}
+  ]
+}

@@ -1,0 +1,9 @@
+# NEVER commit the player's game or anything derived from it
+input/
+local/
+src-extract/
+.dev/
+*.love
+*.exe
+*.jkr
+node_modules/

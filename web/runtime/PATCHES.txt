@@ -1,0 +1,1 @@
+love.js: doRun waits for run dependencies (IDBFS_sync race) — see tools/patch_runtime.py

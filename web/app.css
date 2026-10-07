@@ -1,0 +1,36 @@
+:root { color-scheme: dark; --bg:#1b2a33; --panel:#24343f; --red:#fe5f55; --blue:#009dff; --gold:#f5b143; --text:#f2f2f2; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; background: #000; color: var(--text); overflow: hidden;
+  font: 16px/1.4 -apple-system, system-ui, sans-serif; overscroll-behavior: none; touch-action: none; }
+/* The game canvas always covers the whole viewport, including under the notch/home bar. */
+#canvas { position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100dvh !important;
+  margin: 0 !important; padding: 0 !important; display: block; outline: none; touch-action: none;
+  visibility: hidden; background: #000; z-index: 1; }
+body.running #canvas { visibility: visible; }
+body.running #shell { display: none; }
+.panel { position: fixed; inset: 0; overflow: auto; touch-action: pan-y; padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) 24px max(24px, env(safe-area-inset-left));
+  background: radial-gradient(circle at 30% 20%, #2e4a5a, var(--bg)); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 8px; }
+h1 { margin: 0; font-size: 44px; letter-spacing: 1px; color: var(--red); text-shadow: 0 3px 0 #7a2420; }
+h1 span { color: var(--blue); text-shadow: 0 3px 0 #004f80; font-size: 28px; }
+.sub { max-width: 560px; opacity: .85; margin: 4px 0 12px; }
+.step { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.hidden { display: none !important; }
+.btn { display: inline-block; border: 0; border-radius: 12px; padding: 12px 22px; font: inherit; font-weight: 700; color: #fff; background: #3d5566; cursor: pointer; }
+.btn.primary { background: var(--red); box-shadow: 0 4px 0 #7a2420; }
+.btn.big { font-size: 24px; padding: 16px 40px; }
+.btn:active { transform: translateY(3px); box-shadow: none; }
+.row { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; justify-content: center; }
+.row.small { font-size: 14px; }
+select, input { font: inherit; background: #10202a; color: var(--text); border: 1px solid #456; border-radius: 8px; padding: 6px 8px; }
+.link { background: none; border: 0; color: var(--blue); font: inherit; text-decoration: underline; cursor: pointer; }
+.danger { color: var(--red); }
+.hint { font-size: 13px; opacity: .7; max-width: 560px; margin: 0; }
+.status { min-height: 1.4em; color: var(--gold); margin: 6px 0 0; }
+code { background: #0006; padding: 1px 5px; border-radius: 5px; }
+#rotate { position: fixed; inset: 0; z-index: 20; background: #000d; display: flex; align-items: center; justify-content: center; font-size: 22px; text-align: center; }
+#perf { position: fixed; z-index: 10; top: max(4px, env(safe-area-inset-top)); left: max(6px, env(safe-area-inset-left)); font: 11px/1.3 ui-monospace, monospace;
+  background: #0009; padding: 3px 6px; border-radius: 6px; pointer-events: none; white-space: pre; }
+dialog { background: var(--panel); color: var(--text); border: 0; border-radius: 16px; max-width: 460px; width: 92vw; }
+dialog::backdrop { background: #000a; }
+dialog label { display: flex; flex-direction: column; text-align: left; gap: 4px; margin: 10px 0; }
+dialog menu { display: flex; justify-content: space-between; padding: 0; margin: 14px 0 0; }
