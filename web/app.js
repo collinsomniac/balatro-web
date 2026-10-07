@@ -460,8 +460,6 @@ window.BalatroApp = { play, loadGame, exportSaves, flushSaves, scanComputer, res
   await showReady();
   if (qs.has('autoplay')) await play();
 })();
-})();
-
 /* ---------- card lab: LLM-designed jokers, generated on the player's own computer ---------- */
 const OPS = ['add_mult','add_chips','xmult','add_money','add_hand_size','add_discards','add_hands',
   'mult_per_played_card','mult_per_face','mult_per_suit','xmult_per_joker','xmult_per_money',
@@ -541,3 +539,5 @@ const CardLab = window.BalatroCardLab = {
 };
 $('generate').addEventListener('click', () => CardLab.generate());
 $('sendgame').addEventListener('click', () => CardLab.sendToGame());
+
+})();
