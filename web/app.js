@@ -114,8 +114,9 @@ function applyPatches(files, { set, shim, cardgen, cardreveal }) {
 let quality = prefs.quality;
 try { Object.defineProperty(window, 'devicePixelRatio', { configurable: true, get: () => quality }); } catch (e) { log('dpr override failed ' + e); }
 function fitCanvas() {
+  // Landscape only: gate the app in portrait so the player naturally rotates (iOS has no orientation lock).
   const portrait = innerHeight > innerWidth;
-  $('rotate').classList.toggle('hidden', !(UI.bodyActive && portrait));
+  $('rotate').classList.toggle('hidden', !portrait);
 }
 addEventListener('resize', fitCanvas); addEventListener('orientationchange', () => setTimeout(fitCanvas, 300));
 

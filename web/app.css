@@ -64,3 +64,11 @@ dialog menu { display: flex; justify-content: space-between; padding: 0; margin:
 .cardface { background: linear-gradient(#2b4a8f, #16233f); border: 3px solid #cfd8e8; border-radius: 10px; padding: 10px; margin: 8px 0; }
 .cardface b { display: block; color: #fff; font-size: 17px; }
 .cardface i { color: #ffe9a8; font-style: normal; }
+
+/* Landscape only: this overlay is a gate, not a hint. */
+#rotate { position: fixed; inset: 0; z-index: 50; background: #0d1520f2; display: flex; align-items: center;
+  justify-content: center; text-align: center; padding: 24px; }
+#rotate .rot-inner { max-width: 420px; }
+#rotate .rot-phone { font-size: 74px; line-height: 1; transform: rotate(90deg); color: var(--blue); }
+#rotate h2 { margin: 18px 0 6px; font-size: 22px; color: #fff; }
+#rotate p { margin: 0; opacity: .75; font-size: 15px; }

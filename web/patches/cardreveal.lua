@@ -169,13 +169,7 @@ function CR.install_shop_button()
         if type(nodes) == 'table' then
           for i, child in ipairs(nodes) do
             if type(child) == 'table' and child.config and child.config.button == 'reroll_shop' then
-              table.insert(nodes, i + 1, { n = G.UIT.R, config = { id = 'cg_generate_button', align = 'cm',
-                minw = 2.8, minh = 1.4, r = 0.15, colour = G.C.PURPLE, button = 'cg_generate', hover = true, shadow = true }, nodes = {
-                { n = G.UIT.R, config = { align = 'cm', padding = 0.05 }, nodes = {
-                  { n = G.UIT.T, config = { text = 'Generate', scale = 0.4, colour = G.C.WHITE, shadow = true } } } },
-                { n = G.UIT.R, config = { align = 'cm', padding = 0.02 }, nodes = {
-                  { n = G.UIT.T, config = { text = 'a Joker', scale = 0.32, colour = G.C.WHITE, shadow = true } } } },
-              } })
+              child.config.id = 'cg_reroll_anchor'      -- just a handle; the layout is untouched
               done = true
               return
             end
@@ -190,8 +184,55 @@ function CR.install_shop_button()
   if __WEB then __WEB.emit('reveal', 'shop button installed') end
 end
 
+-- ---------- the floating Generate button (bonded to the shop's own Reroll button) ----------
+function CR.button_box(anchor)
+  return UIBox{
+    definition = { n = G.UIT.ROOT, config = { align = 'cm', colour = G.C.CLEAR, padding = 0.02 }, nodes = {
+      { n = G.UIT.C, config = { id = 'cg_generate_button', align = 'cm', minw = 2.8, minh = 1.4, r = 0.15,
+        colour = G.C.PURPLE, button = 'cg_generate', hover = true, shadow = true }, nodes = {
+        { n = G.UIT.R, config = { align = 'cm', padding = 0.05 }, nodes = {
+          { n = G.UIT.T, config = { text = 'Generate', scale = 0.4, colour = G.C.WHITE, shadow = true } } } },
+        { n = G.UIT.R, config = { align = 'cm', padding = 0.02 }, nodes = {
+          { n = G.UIT.T, config = { text = 'a Joker', scale = 0.32, colour = G.C.WHITE, shadow = true } } } },
+      } },
+    } },
+    config = { align = 'cm', offset = { x = 0, y = -1.62 }, major = anchor, bond = 'Weak' } }
+end
+
+function CR.update_shop_button()
+  if not (G and G.STATE and G.HUD) then return end
+  local in_shop = G.STATE == G.STATES.SHOP
+  if not in_shop then
+    if CR.btn then pcall(function() CR.btn:remove() end) CR.btn = nil end
+    return
+  end
+  if CR.btn then return end
+  local anchor = G.HUD.get_UIE_by_ID and G.HUD:get_UIE_by_ID('cg_reroll_anchor')
+  local node = anchor or (G.HUD.get_UIE_by_ID and G.HUD:get_UIE_by_ID('next_round_button'))
+  if node then CR.btn = CR.button_box(node) end
+end
+
+-- ---------- install hooks ----------
+function CR.install()
+  if CR.installed then return end
+  CR.installed = true
+  pcall(CR.late_init)
+  local _update, _draw = love.update, love.draw
+  love.update = function(dt)
+    if _update then _update(dt) end
+    pcall(CR.update, dt)
+    pcall(CR.update_shop_button)
+  end
+  love.draw = function() if _draw then _draw() end pcall(CR.draw_overlay) end
+  if __WEB then __WEB.emit('reveal', 'installed') end
+end
+
+-- ---------- everything that needs the game to exist ----------
+function CR.late_init()
+  if CR.late_done then return end
+  CR.late_done = true
+  G.FUNCS = G.FUNCS or {}
 -- ---------- game functions ----------
-G.FUNCS = G.FUNCS or {}
 G.FUNCS.cg_generate = function(e)
   if CR.moment then return end
   if G.STATE ~= G.STATES.SHOP then return end
@@ -215,17 +256,7 @@ G.FUNCS.cg_take = function(e)
 end
 G.FUNCS.cg_close = function(e) CR.close() end
 
--- ---------- install hooks ----------
-function CR.install()
-  if CR.installed then return end
-  CR.installed = true
-  local _update, _draw = love.update, love.draw
-  love.update = function(dt) if _update then _update(dt) end pcall(CR.update, dt) end
-  love.draw = function() if _draw then _draw() end pcall(CR.draw_overlay) end
-  if __WEB then __WEB.emit('reveal', 'installed') end
-end
-
-if __WEB and __WEB.handlers then
+  if __WEB and __WEB.handlers then
   __WEB.handlers.cardpending = function(d)
     local topic = type(d) == 'table' and d.topic or d
     CR.current_topic = topic
@@ -234,4 +265,6 @@ if __WEB and __WEB.handlers then
   __WEB.handlers.cardreveal = function(spec) CR.deliver(spec) end
   __WEB.handlers.cardhide = function() CR.close() end
   __WEB.handlers.settopic = function(d) CR.current_topic = (type(d) == 'table' and d.topic) or d end
+  end
 end
+
