@@ -207,6 +207,12 @@ async function play() {
   canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); log('graphics context lost'); started = false; UI.body(false); UI.show('ready'); }, false);
 
   const gl = { frames: 0, t0: performance.now(), showed: false };
+  setTimeout(() => {                       // engine silence watchdog
+    if (!lastPerf || lastPerf.fps === undefined) {
+      banner('The engine started but never ran a frame — usually a half-updated cache. Pull to refresh; if it repeats, tap "Copy details" and send it over.', 'info');
+      UI.show('loading');
+    }
+  }, 25000);
   Bridge.on('perf', () => {
     gl.frames = (lastPerf.fps || 0);
     const secs = ((performance.now() - gl.t0) / 1000).toFixed(0);
