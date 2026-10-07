@@ -37,6 +37,10 @@ package.preload['bit'] = function()
   return M
 end
 
+-- 1b. Lua 5.4 renames (harmless on 5.1).
+_G.loadstring = _G.loadstring or _G.load
+if not _G.unpack and table.unpack then _G.unpack = table.unpack end
+
 -- 2. `jit` stub.
 _G.jit = _G.jit or { arch = 'wasm32', os = 'Web', version = 'none', off = function() end, on = function() end, flush = function() end }
 
