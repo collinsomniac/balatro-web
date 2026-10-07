@@ -216,7 +216,11 @@ function CR.update_shop_button()
   end
   if node then
     CR.btn = CR.button_box(node)
-    if __WEB then __WEB.emit('reveal', 'shop button placed') end
+    if __WEB then __WEB.emit('reveal', 'shop button placed (anchored)') end
+  elseif G.shop then
+    -- fallback: if the shop's own buttons cannot be found, sit under the shop panel's left column anyway
+    CR.btn = CR.button_box(G.shop)
+    if __WEB then __WEB.emit('reveal', 'shop button placed (fallback)') end
   end
 end
 
