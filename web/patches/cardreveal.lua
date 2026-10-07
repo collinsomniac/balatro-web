@@ -57,14 +57,27 @@ end
 
 local function draw_background(zoom)
   local a = G and G.ASSET_ATLAS and G.ASSET_ATLAS['ui_1']
-  if not a then return end
-  love.graphics.setColor(BG_COLOUR[1], BG_COLOUR[2], BG_COLOUR[3], 1)
-  local sw, sh = a.image:getWidth() / 10, a.image:getHeight() / 10
-  local qw, qh = a.image:getWidth() / 10, a.image:getHeight() / 10
-  love.graphics.draw(a.image, love.graphics.newQuad(2 * sw, 0, sw, sh, a.image:getWidth(), a.image:getHeight()),
-    0, 0, 0, love.graphics.getWidth() * zoom / qw, love.graphics.getHeight() * zoom / qh)
-  love.graphics.setColor(0, 0, 0, 0.55)
-  love.graphics.rectangle('fill', 0, 0, love.graphics.getWidth(), love.graphics.getHeight())
+  local W, H = love.graphics.getWidth(), love.graphics.getHeight()
+  if a then
+    local sw, sh = a.image:getWidth() / 10, a.image:getHeight() / 5      -- the ui_1 atlas is 10 x 5
+    local qw, qh = sw, sh
+    local cover = math.max(W / qw, H / qh) * zoom                        -- fill the screen, don't stretch
+    local dw, dh = qw * cover, qh * cover
+    love.graphics.setColor(BG_COLOUR[1], BG_COLOUR[2], BG_COLOUR[3], 1)
+    love.graphics.draw(a.image, love.graphics.newQuad(2 * sw, 0, sw, sh, a.image:getWidth(), a.image:getHeight()),
+      (W - dw) / 2, (H - dh) / 2, 0, cover, cover)
+  else
+    love.graphics.setColor(BG_COLOUR[1], BG_COLOUR[2], BG_COLOUR[3], 1)
+    love.graphics.rectangle('fill', 0, 0, W, H)
+  end
+  love.graphics.setColor(0, 0, 0, 0.42)
+  love.graphics.rectangle('fill', 0, 0, W, H)
+  -- soft light behind the card so a black silhouette reads against it
+  local x, y, w, h = card_rect()
+  for i = 6, 1, -1 do
+    love.graphics.setColor(1, 1, 1, 0.035)
+    love.graphics.rectangle('fill', x - i * 22, y - i * 22, w + i * 44, h + i * 44, 0.4)
+  end
 end
 
 local function draw_silhouette(x, y, w, h, shake, pulse)
@@ -75,8 +88,8 @@ local function draw_silhouette(x, y, w, h, shake, pulse)
   love.graphics.translate(-w / 2, -h / 2)
   love.graphics.setColor(0, 0, 0, 1)
   love.graphics.rectangle('fill', 0, 0, w, h, 0.3)
-  love.graphics.setColor(1, 1, 1, 0.08 + 0.05 * pulse)
-  love.graphics.setLineWidth(2)
+  love.graphics.setColor(1, 1, 1, 0.30 + 0.12 * pulse)
+  love.graphics.setLineWidth(3)
   love.graphics.rectangle('line', 0, 0, w, h, 0.3)
   -- the card's own art, drawn black: a true silhouette
   if CR.spec and CR.spec.art and CR.spec.art.pos and G.ASSET_ATLAS['Jokers'] then
