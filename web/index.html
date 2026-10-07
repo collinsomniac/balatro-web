@@ -81,6 +81,8 @@
     <label class="sr">Topic <input id="topic" placeholder="the Fibonacci sequence" enterkeyhint="send"></label>
     <div class="row small">
       <label>Agent <select id="provider"><option value="claude">Claude Code</option><option value="codex">Codex</option></select></label>
+      <label>Model <input id="gmodel" size="10" placeholder="account default"></label>
+      <label><input type="checkbox" id="fastgen" checked> fast (no thinking)</label>
       <label><input type="checkbox" id="useweb"> research it first</label>
       <button id="generate" class="btn primary">Generate card</button>
       <button id="sendgame" class="btn" disabled>Send to game</button>

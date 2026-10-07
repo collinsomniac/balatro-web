@@ -504,6 +504,12 @@ const CardLab = window.BalatroCardLab = {
     if (!topic) { $('genstatus').textContent = 'Type a topic first.'; return null; }
     const provider = opts.provider || $('provider').value;
     const allowWeb = opts.allow_web ?? $('useweb').checked;
+    const fast = $('fastgen').checked;                                   // skip thinking: much less latency
+    let model = ($('gmodel').value || '').trim();                        // blank = the CLI's own default
+    if (!model && provider === 'claude') model = 'haiku';
+    const effort = fast ? 'low' : 'medium';
+    localStorage.setItem('bw.model.' + provider, model);
+    localStorage.setItem('bw.fast', fast ? '1' : '0');
     const base = this.base;
     if (!base) { $('genstatus').textContent = 'Set your computer address in the setup screen first.'; return null; }
     if (started) Bridge.send('cardpending', { topic });   // silhouette holds until the design arrives
@@ -514,7 +520,7 @@ const CardLab = window.BalatroCardLab = {
       const skill = await fetch('cardgen/PROMPT.md', { cache: 'no-cache' }).then((r) => r.text());
       const prompt = skill + '\n\n---\n\nThe topic is: **' + topic + '**\n\nReturn only the JSON object.';
       const res = await fetch(base + '/gen', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, prompt, allow_web: allowWeb, timeout: 300 }) });
+        body: JSON.stringify({ provider, prompt, allow_web: allowWeb, timeout: 300, model, effort }) });
       const json = await res.json();
       if (json.error) throw new Error(json.error);
       const spec = extractJson(json.text || '');
@@ -529,7 +535,7 @@ const CardLab = window.BalatroCardLab = {
       face.querySelector('i').textContent = lines;
       $('cardresult').appendChild(face);
       $('genstatus').textContent = (errs.length ? 'Issues: ' + errs.join('; ') : 'Looks valid') +
-        ` · ${json.seconds}s · ${provider}`;
+        ` · ${json.seconds}s · ${json.model || provider} · effort ${json.effort || effort}`;
       $('cardresult').appendChild(Object.assign(document.createElement('pre'), { textContent: JSON.stringify(spec, null, 2) }));
       $('sendgame').disabled = !!(errs.length);
       log('card generated: ' + spec.name + ' (' + (json.seconds) + 's)');
@@ -549,6 +555,11 @@ const CardLab = window.BalatroCardLab = {
     log('card sent to game: ' + this.last.name);
   },
 };
+$('provider').addEventListener('change', () => {
+  $('gmodel').value = localStorage.getItem('bw.model.' + $('provider').value) || '';
+});
+$('fastgen').checked = localStorage.getItem('bw.fast') !== '0';
+$('gmodel').value = localStorage.getItem('bw.model.' + $('provider').value) || '';
 $('topic').addEventListener('input', () => Bridge.send('settopic', { topic: $('topic').value || 'something from this run' }));
 $('generate').addEventListener('click', () => CardLab.generate());
 $('sendgame').addEventListener('click', () => CardLab.sendToGame());
