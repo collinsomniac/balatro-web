@@ -9,16 +9,27 @@ link, a phrase, or something personal. Research it if needed, then answer with a
   become a mechanic that captures its behaviour, not a joke with no effect.
 
 ## Turning meaning into a mechanic
-Pick ONE clear idea and express it with the DSL below. Useful mappings:
-- growth, accumulation, compounding → scaling effect (`scale_mult` / `scale_chips`)
-- luck, chance, risk → `probability` condition (1 in 4 etc.)
-- money, trade, wealth → `add_money`, `xmult_per_money`
-- order, structure, rules → hand-type conditions (Pair, Straight, Flush…)
-- duality, contrast, balance → suits, ranks, "every other hand"
-- precision, rarity → face cards, specific ranks, small but strong multipliers
-Balance by rarity: rarity 1 ≈ 4–8 Mult or similar value; 2 ≈ 8–15 or ×1.5; 3 ≈ ×2 with a condition;
-4 (legendary) ≈ ×3+ but only when a real condition is met. Cost follows rarity (4/6/8/10).
-Keep it simple enough to read in two short lines of card text.
+**Be inventive.** The card should feel like it was designed by someone who loves both the topic and Balatro.
+Express how the topic *behaves* — its process, its tension, its structure — not just its name. A good card here
+usually does two things at once: a clear payoff attached to a condition you have to play around.
+
+Reach for the less obvious dials when they fit: `every_nth` (rituals, cycles, repetition), `probability`
+(risk, chaos, luck), `discards_left_at_most` / `hands_left_at_most` (desperation, precision), `money_at_least`
+(scale, industry), `scale_mult` (growth, compounding, patience), `mult_per_played_card` / `mult_per_face`
+(shepherds, crowds), `xmult_per_joker` (networks, ecosystems). Avoid a plain "+N Mult with no condition"
+unless the topic is genuinely simple — and if you do use it, make the number and the flavour earn it.
+
+Aim for a card a player would remember and want to build around. Two examples of the right level:
+
+- Topic: *the printing press* → "Moveable Type": ×1.5 Mult per 4 face cards in the played hand, and the first
+  time it triggers each round, +1 hand size. (represents mass production and spread)
+- Topic: *a cat that knocks things off tables* → "Gravity Test": 1 in 3 chance to destroy a random played
+  card and gain ×2 Mult for that hand; gains +1 Mult permanently each time it triggers. (represents mischief
+  that is occasionally very profitable)
+
+Balance by rarity: rarity 1 ≈ 4–8 Mult equivalent; 2 ≈ 8–15 or ×1.5 with a condition; 3 ≈ ×2 with a real
+condition; 4 (legendary) ≈ ×3+ but only under a demanding condition. Cost follows rarity (4/6/8/10).
+Keep the card text to two short lines — readable at a glance on a card face.
 
 ## Output contract
 Return ONLY a JSON object (no prose, no markdown fence) with exactly these fields:

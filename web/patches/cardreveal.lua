@@ -130,7 +130,10 @@ function CR.update(dt)
 end
 
 function CR.draw()
-  if not CR.active then return end
+  if not CR.active then
+    pcall(CR.draw_shop_button)
+    return
+  end
   love.graphics.push()
   love.graphics.origin()
   love.graphics.setShader()
@@ -173,10 +176,55 @@ function CR.draw()
   love.graphics.pop()
 end
 
+-- In-game entry point: while the shop is open, offer a button that asks the page (and so the player's own
+-- computer) to design a card. Living in the shop matches the flow: beat the blind, take the reward, spend it.
+function CR.topic() return CR.current_topic or 'something from this run' end
+
+function CR.button_rect()
+  local w, h = love.graphics.getWidth(), love.graphics.getHeight()
+  local bw, bh = math.min(420, w * 0.34), math.max(56, h * 0.085)
+  return w - bw - 24, h - bh - 24, bw, bh
+end
+
+function CR.in_shop()
+  return G and G.STATE == G.STATES.SHOP and not CR.active and G.STAGE == G.STAGES.RUN
+end
+
+function CR.draw_shop_button()
+  if not CR.in_shop() then return end
+  local x, y, w, h = CR.button_rect()
+  local hover = CR.hover
+  love.graphics.setColor(0, 0, 0, 0.6)
+  love.graphics.rectangle('fill', x + 3, y + 4, w, h, 0.4)
+  love.graphics.setColor(hover and 0.62 or 0.48, 0.20, 0.72, 1)
+  love.graphics.rectangle('fill', x, y, w, h, 0.4)
+  love.graphics.setColor(1, 1, 1, 0.85)
+  love.graphics.setLineWidth(2)
+  love.graphics.rectangle('line', x, y, w, h, 0.4)
+  love.graphics.printf('Generate a Joker', x, y + h * 0.24, w, 'center')
+  love.graphics.setColor(1, 1, 1, 0.6)
+  love.graphics.printf('from "…" ' .. tostring(CR.topic()):sub(1, 22), x, y + h * 0.55, w, 'center')
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
 -- input: tap anywhere to dismiss once revealed
-function CR.mousepressed()
+function CR.mousepressed(x, y)
   if CR.active and (CR.phase == 'reveal' or CR.phase == 'hold') then CR.hide() return true end
+  if CR.in_shop() then
+    local bx, by, bw, bh = CR.button_rect()
+    if x >= bx and x <= bx + bw and y >= by and y <= by + bh then
+      CR.start(CR.topic())
+      if __WEB then __WEB.emit('cardrequest', CR.topic()) end   -- the page does the generation
+      return true
+    end
+  end
   return false
+end
+
+function CR.mousemoved(x, y)
+  if not CR.in_shop() then CR.hover = false return end
+  local bx, by, bw, bh = CR.button_rect()
+  CR.hover = x >= bx and x <= bx + bw and y >= by and y <= by + bh
 end
 
 -- Bridge commands from the page
@@ -186,6 +234,9 @@ if __WEB and __WEB.handlers then
   end
   __WEB.handlers.cardreveal = function(spec) CR.deliver(spec) end
   __WEB.handlers.cardhide = function() CR.hide() end
+  __WEB.handlers.settopic = function(d)
+    CR.current_topic = (type(d) == 'table' and d.topic) or d
+  end
 end
 
 -- Install the draw/update hooks once the game is up.
@@ -195,6 +246,8 @@ function CR.install()
   local _update, _draw = love.update, love.draw
   love.update = function(dt) if _update then _update(dt) end pcall(CR.update, dt) end
   love.draw = function() if _draw then _draw() end pcall(CR.draw) end
+  local _mm = love.mousemoved
+  love.mousemoved = function(x, y, dx, dy, t) if _mm then _mm(x, y, dx, dy, t) end pcall(CR.mousemoved, x, y) end
   local _mp = love.mousepressed
   love.mousepressed = function(x, y, b, t)
     if not CR.mousepressed() and _mp then _mp(x, y, b, t) end

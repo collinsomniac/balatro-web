@@ -83,7 +83,7 @@ async function importBytes(u8, name) {
 
 /* ---------- patching: exact-match, fails loudly ---------- */
 async function loadPatchSet() {
-  const [set, shim, cardgen] = await Promise.all([
+  const [set, shim, cardgen, cardreveal] = await Promise.all([
     fetch('patches/balatro-1.0.1.json', { cache: 'no-cache' }).then((r) => r.json()),
     fetch('patches/web_shim.lua', { cache: 'no-cache' }).then((r) => r.text()),
     fetch('patches/cardgen.lua', { cache: 'no-cache' }).then((r) => r.text()),
@@ -180,6 +180,12 @@ function flushSaves(why) { const FS = window.LoveState && window.LoveState.FS; i
 addEventListener('pagehide', () => flushSaves('pagehide'));
 document.addEventListener('visibilitychange', () => { if (document.hidden) flushSaves('hidden'); });
 Bridge.on('boot', () => { sendViewport(); Bridge.send('opts', { fps_cap: 60, skip_splash: prefs.skipsplash }); });
+Bridge.on('cardrequest', (topic) => {          // asked from inside the game (shop button)
+  log('card requested in-game: ' + topic);
+  if ($('topic')) $('topic').value = topic;
+  CardLab.generate(topic).then((spec) => { if (spec) CardLab.sendToGame(); });
+});
+Bridge.on('reveal', (msg) => log('reveal ' + msg));
 
 /* ---------- launch ---------- */
 let engineBytes = null, started = false;
@@ -542,6 +548,7 @@ const CardLab = window.BalatroCardLab = {
     log('card sent to game: ' + this.last.name);
   },
 };
+$('topic').addEventListener('input', () => Bridge.send('settopic', { topic: $('topic').value || 'something from this run' }));
 $('generate').addEventListener('click', () => CardLab.generate());
 $('sendgame').addEventListener('click', () => CardLab.sendToGame());
 
