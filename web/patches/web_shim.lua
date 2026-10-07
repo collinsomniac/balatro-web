@@ -139,6 +139,10 @@ end
 function WEB.tick(dt)
   WEB.main_co = WEB.main_co or coroutine.running()   -- the coroutine LÖVE drives (the main game loop)
   WEB.frames = WEB.frames + 1
+  if not WEB.reveal_hooked and _G.__CARDREVEAL then
+    WEB.reveal_hooked = true
+    pcall(_G.__CARDREVEAL.install)          -- now that love.update/love.draw exist
+  end
   if not WEB.booted then
     WEB.booted = true
     WEB.boot_time = love.timer and love.timer.getTime() or 0
@@ -210,6 +214,7 @@ end
 
 -- 7c. Generated cards (LLM-designed jokers) ride along if the loader supplied them.
 if love.filesystem and love.filesystem.getInfo('cardgen.lua') then pcall(require, 'cardgen') end
+if love.filesystem and love.filesystem.getInfo('cardreveal.lua') then pcall(require, 'cardreveal') end
 
 -- 8. JS -> Lua: Module.love_send_event('web', json) -> love.userevent -> love.handlers.web(json).
 -- Minimal JSON decoder (objects, arrays, strings, numbers, bools, null).

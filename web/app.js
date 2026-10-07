@@ -87,10 +87,11 @@ async function loadPatchSet() {
     fetch('patches/balatro-1.0.1.json', { cache: 'no-cache' }).then((r) => r.json()),
     fetch('patches/web_shim.lua', { cache: 'no-cache' }).then((r) => r.text()),
     fetch('patches/cardgen.lua', { cache: 'no-cache' }).then((r) => r.text()),
+    fetch('patches/cardreveal.lua', { cache: 'no-cache' }).then((r) => r.text()),
   ]);
-  return { set, shim, cardgen };
+  return { set, shim, cardgen, cardreveal };
 }
-function applyPatches(files, { set, shim, cardgen }) {
+function applyPatches(files, { set, shim, cardgen, cardreveal }) {
   const dec = new TextDecoder(), enc = new TextEncoder();
   const ver = dec.decode(files['version.jkr'] || new Uint8Array()).split('\n')[0];
   if (!ver.startsWith(set.game_version_prefix)) log(`warning: game ${ver}, patches target ${set.game_version_prefix}x`);
@@ -105,6 +106,7 @@ function applyPatches(files, { set, shim, cardgen }) {
   for (const [f, s] of Object.entries(texts)) files[f] = enc.encode(s);
   files['web_shim.lua'] = enc.encode(shim);
   files['cardgen.lua'] = enc.encode(cardgen);        // generated-card runtime
+  files['cardreveal.lua'] = enc.encode(cardreveal);  // the silhouette → shake → reveal animation
   return ver;
 }
 
@@ -497,6 +499,7 @@ const CardLab = window.BalatroCardLab = {
     const allowWeb = opts.allow_web ?? $('useweb').checked;
     const base = this.base;
     if (!base) { $('genstatus').textContent = 'Set your computer address in the setup screen first.'; return null; }
+    if (started) Bridge.send('cardpending', { topic });   // silhouette holds until the design arrives
     $('genstatus').textContent = `Asking ${provider} on your computer… (this takes a few seconds)`;
     $('cardresult').textContent = '';
     $('sendgame').disabled = true;
@@ -533,6 +536,7 @@ const CardLab = window.BalatroCardLab = {
   sendToGame() {
     if (!this.last) return;
     if (!started) { $('genstatus').textContent = 'Start the game first (Tap to play).'; return; }
+    Bridge.send('cardreveal', this.last);      // shake, reveal, then it is registered and added
     Bridge.send('cardadd', this.last);
     $('genstatus').textContent = 'Sent to the game — check your Joker area.';
     log('card sent to game: ' + this.last.name);
