@@ -222,6 +222,7 @@ async function play() {
       }
     } else if (!gl.showed) {
       UI.stage(88, 'Loading game…', info);
+      if (performance.now() - gl.t0 > 12000) $('skipwait').classList.remove('hidden');
       if (gl.t0 && performance.now() - gl.t0 > 45000 && !gl.warned) {
         gl.warned = true;
         banner('Still loading after 45 s. Tap "Copy details" below and send it over — the log will say where it stopped.', 'info');
@@ -357,6 +358,7 @@ $('file').addEventListener('change', async (e) => {
 });
 $('scan').addEventListener('click', scanComputer);
 $('play').addEventListener('click', play);
+$('skipwait').addEventListener('click', () => { log('user forced the game view'); UI.show(null); UI.body(true); $('chip').classList.remove('hidden'); fitCanvas(); });
 $('copylog').addEventListener('click', copyDetails);
 $('reload2').addEventListener('click', () => location.reload());
 $('menu').addEventListener('click', () => { UI.body(false); UI.show('ready'); });
