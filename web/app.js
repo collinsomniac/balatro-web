@@ -10,6 +10,10 @@ const qs = new URLSearchParams(location.search);
 const log = (...a) => { const line = a.join(' '); (window.__send ? __send(line) : console.log(line));
   const el = $('log'); if (el) { el.textContent += line + '\n'; el.scrollTop = el.scrollHeight; if (el.textContent.length > 20000) el.textContent = el.textContent.slice(-15000); } };
 const status = (t) => { $('status').textContent = t || ''; if (t) log('status: ' + t); };
+const banner = (msg, kind) => { const b = $('banner'); b.textContent = msg; b.className = kind || ''; b.classList.remove('hidden'); log('BANNER: ' + msg); };
+const clearBanner = () => $('banner').classList.add('hidden');
+addEventListener('error', (e) => banner('Error: ' + (e.message || e.error || 'unknown') + '  (line ' + (e.lineno || '?') + ')'));
+addEventListener('unhandledrejection', (e) => banner('Error: ' + (e.reason && (e.reason.message || e.reason))));
 
 /* ---------- stage/progress UI ---------- */
 const UI = {
@@ -205,13 +209,24 @@ async function play() {
   const gl = { frames: 0, t0: performance.now(), showed: false };
   Bridge.on('perf', () => {
     gl.frames = (lastPerf.fps || 0);
-    if (lastPerf.state === 11 && !gl.showed) {   // main menu reached -> play
-      gl.showed = true;
-      UI.stage(100, 'Ready', `menu reached after ${((performance.now() - gl.t0) / 1000).toFixed(1)} s`);
-      setTimeout(() => { UI.show(null); UI.body(true); fitCanvas(); }, 300);
+    const secs = ((performance.now() - gl.t0) / 1000).toFixed(0);
+    const info = `state ${lastPerf.state ?? '?'} · ${lastPerf.fps ?? 0} fps · ${((lastPerf.mem_kb || 0) / 1024).toFixed(0)} MB Lua heap · ${secs}s`;
+    $('chip').textContent = info;
+    if (lastPerf.state === 11 && !gl.showed) {         // menu reached: hand over only once it is really drawing
+      gl.menuFrames = (gl.menuFrames || 0) + 1;
+      UI.stage(100, 'Ready', 'menu reached after ' + secs + ' s');
+      if (gl.menuFrames >= 2) {
+        gl.showed = true;
+        setTimeout(() => { UI.show(null); UI.body(true); $('chip').classList.remove('hidden');
+          setTimeout(() => $('chip').classList.add('hidden'), 6000); fitCanvas(); }, 300);
+      }
     } else if (!gl.showed) {
-      const s = ((performance.now() - gl.t0) / 1000).toFixed(1);
-      UI.stage(88, 'Loading game assets…', `${s}s · ${lastPerf.fps ?? 0} fps · ${((lastPerf.mem_kb || 0) / 1024).toFixed(0)} MB Lua heap`);
+      UI.stage(88, 'Loading game…', info);
+      if (gl.t0 && performance.now() - gl.t0 > 45000 && !gl.warned) {
+        gl.warned = true;
+        banner('Still loading after 45 s. Tap "Copy details" below and send it over — the log will say where it stopped.', 'info');
+        UI.show('loading');
+      }
     }
   });
 
@@ -275,6 +290,26 @@ async function downloadFrom(base, f) {
   } catch (e) { UI.stage(0, 'Download failed', e.message); log('download failed: ' + e.message); }
 }
 
+function details() {
+  const c = $('canvas');
+  return ['--- balatro web diagnostics ' + new Date().toISOString(),
+    'ua: ' + navigator.userAgent,
+    'standalone: ' + (matchMedia('(display-mode: standalone)').matches || navigator.standalone),
+    'viewport: ' + innerWidth + 'x' + innerHeight + ' dpr=' + window.devicePixelRatio + ' quality=' + quality,
+    'canvas: ' + c.width + 'x' + c.height + ' css=' + (c.clientWidth + 'x' + c.clientHeight),
+    'coi: ' + self.crossOriginIsolated + ' SAB: ' + (typeof SharedArrayBuffer) + ' sw: ' + ('serviceWorker' in navigator),
+    'engine: ' + (window.LoveState ? 'loaded' : 'not loaded') + ' started=' + started,
+    'last perf: ' + JSON.stringify(lastPerf),
+    'audio: ' + audioCtxs.map((x) => x.state).join('/'),
+    '', '--- log ---', $('log').textContent].join('\n');
+}
+async function copyDetails() {
+  const t = details();
+  try { await navigator.clipboard.writeText(t); status('Diagnostics copied — paste them into the chat.'); }
+  catch (e) { window.prompt('Copy these diagnostics:', t); }
+  log('details copied (' + t.length + ' chars)');
+}
+
 /* ---------- saves export ---------- */
 async function exportSaves() {
   const FS = window.LoveState && window.LoveState.FS;
@@ -306,6 +341,9 @@ $('keys').addEventListener('close', () => {
 
 /* ---------- wiring ---------- */
 async function showReady() {
+  const standalone = matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone;
+  const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  $('fs').classList.toggle('hidden', standalone || !isIos);
   const meta = await idb.get('game.meta').catch(() => null);
   if (!meta) { UI.show('setup'); return; }
   $('gameinfo').textContent = `${meta.name} · game ${meta.version} · ${mb(meta.size)} kept in this browser`;
@@ -319,6 +357,8 @@ $('file').addEventListener('change', async (e) => {
 });
 $('scan').addEventListener('click', scanComputer);
 $('play').addEventListener('click', play);
+$('copylog').addEventListener('click', copyDetails);
+$('reload2').addEventListener('click', () => location.reload());
 $('menu').addEventListener('click', () => { UI.body(false); UI.show('ready'); });
 $('reload').addEventListener('click', () => location.reload());
 $('settings').addEventListener('click', () => Keys.open());

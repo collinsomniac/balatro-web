@@ -50,3 +50,10 @@ dialog { background: var(--panel); color: var(--text); border: 0; border-radius:
 dialog::backdrop { background: #000a; }
 dialog label { display: flex; flex-direction: column; text-align: left; gap: 4px; margin: 10px 0; }
 dialog menu { display: flex; justify-content: space-between; padding: 0; margin: 14px 0 0; }
+
+#banner { position: fixed; z-index: 30; left: 0; right: 0; top: 0; padding: max(10px, env(safe-area-inset-top)) 14px 10px;
+  background: #7a2420; color: #fff; font-size: 14px; white-space: pre-wrap; }
+#banner.info { background: #10405e; }
+#chip { position: fixed; z-index: 11; left: 50%; transform: translateX(-50%); bottom: max(8px, env(safe-area-inset-bottom));
+  background: #000a; color: #cfe; font: 12px/1.35 ui-monospace, monospace; padding: 5px 9px; border-radius: 8px; }
+.fs { background: #f5b14322; border: 1px solid #f5b143; border-radius: 10px; padding: 8px 10px; max-width: min(620px, 90vw); color: #ffe9c2; }

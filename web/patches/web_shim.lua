@@ -80,6 +80,12 @@ function Channel:demand()
   while #self.q == 0 do
     local co = coroutine.running()
     if not co then return nil end
+    -- Never block the main game loop: LÖVE drives it from a coroutine, and yielding there would drop the
+    -- rest of the frame (a frozen picture with the game's own loading bar still on screen).
+    if co == WEB.main_co then
+      emit('error', 'demand() on the main thread for channel ' .. self.name .. ' (returning nil)')
+      return nil
+    end
     local known = false
     for _, c in ipairs(self.consumers) do if c == co then known = true end end
     if not known then table.insert(self.consumers, co) end
@@ -131,6 +137,7 @@ function WEB.long_dt(dt)
   if dt > WEB.worst then WEB.worst = dt end
 end
 function WEB.tick(dt)
+  WEB.main_co = WEB.main_co or coroutine.running()   -- the coroutine LÖVE drives (the main game loop)
   WEB.frames = WEB.frames + 1
   WEB.t = WEB.t + (dt or 0)
   if WEB.t >= 2 then

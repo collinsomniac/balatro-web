@@ -49,6 +49,10 @@
   <div class="progress"><div id="bar"></div></div>
   <p id="stage" class="stage">Starting…</p>
   <p id="detail" class="hint"></p>
+  <div class="row small">
+    <button id="copylog" class="link">Copy details</button>
+    <button id="reload2" class="link">Reload</button>
+  </div>
   <details id="logbox"><summary>Details</summary><pre id="log"></pre></details>
 </section>
 
@@ -67,6 +71,8 @@
     <label><input type="checkbox" id="showperf"> FPS</label>
   </div>
   <p id="gameinfo" class="hint"></p>
+  <p id="fs" class="fs hidden">Safari's address bar costs a lot of screen. For true full-screen:
+  <b>Share → Add to Home Screen</b>, then open Balatro from your Home Screen.</p>
   <div class="row small">
     <button id="settings" class="link">Keys &amp; co-op</button>
     <button id="export" class="link">Export saves</button>
@@ -78,6 +84,8 @@
 <button id="menu" class="fab hidden" title="Menu">☰</button>
 <div id="rotate" class="hidden"><div>↻<br>Turn your phone sideways</div></div>
 <div id="perf" class="hidden"></div>
+<div id="banner" class="hidden"></div>
+<div id="chip" class="hidden"></div>
 
 <dialog id="keys">
   <form method="dialog">
