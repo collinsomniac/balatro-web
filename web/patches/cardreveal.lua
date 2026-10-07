@@ -143,13 +143,21 @@ function CR.update(dt)
 end
 
 function CR.draw()
-  if not CR.active then
-    pcall(CR.draw_shop_button)
-    return
-  end
-  love.graphics.push()
+  -- The game leaves transform/scissor/stencil state behind; clear all of it or the overlay is clipped to
+  -- the play area (which is what made it look like half a screen).
+  love.graphics.push('all')
   love.graphics.origin()
   love.graphics.setShader()
+  love.graphics.setCanvas()
+  love.graphics.setScissor()
+  love.graphics.setStencilTest()
+  love.graphics.setBlendMode('alpha')
+  love.graphics.setColor(1, 1, 1, 1)
+  if not CR.active then
+    pcall(CR.draw_shop_button)
+    love.graphics.pop()
+    return
+  end
 
   local cycle = (CR.t % ZOOM_PERIOD) / ZOOM_PERIOD
   local zoom = 1.15 + 0.25 * cycle
