@@ -21,6 +21,7 @@
   let frames = 0; const tick = () => { frames++; requestAnimationFrame(tick); }; requestAnimationFrame(tick);
   let beats = 0; const hb = setInterval(() => { send('heartbeat rafFrames=' + frames + ' vis=' + document.visibilityState); frames = 0; if (++beats > 20) clearInterval(hb); }, 3000);
   window.__send = send;
+  window.__bwURL = url;          // shared with the command loop below (separate closure)
 })();
 // Remote control: agent queues commands via POST /__cmd; page polls. "shot" captures the WebGL canvas
 // right after the app's own rAF callback (so the drawing buffer is still valid), "eval <js>" runs JS.
@@ -34,7 +35,7 @@
         const c = document.getElementById('canvas') || document.querySelector('canvas');
         if (c && c.width > 300 && (!c.style || getComputedStyle(c).visibility !== 'hidden')) {
           wantShot = false;
-          try { const u = c.toDataURL('image/png'); fetch(url('/__shot'), { method: 'POST', body: u }); window.__send('shot ' + c.width + 'x' + c.height); }
+          try { const u = c.toDataURL('image/png'); fetch(window.__bwURL('/__shot'), { method: 'POST', body: u }); window.__send('shot ' + c.width + 'x' + c.height); }
           catch (e) { window.__send('shot error ' + e); }
         }
       }
@@ -43,7 +44,7 @@
   window.__shot = () => { wantShot = true; };
   setInterval(async () => {
     try {
-      const cmd = (await (await fetch(url('/__cmd', { id: 1 }), { cache: 'no-store' })).text()).trim();
+      const cmd = (await (await fetch(window.__bwURL('/__cmd', { id: 1 }), { cache: 'no-store' })).text()).trim();
       if (!cmd) return;
       if (cmd === 'play') { const b = document.getElementById('play'); b ? b.click() : window.__send('no play button (already running?)'); }
       else if (cmd === 'tap') { const c = document.getElementById('canvas');
