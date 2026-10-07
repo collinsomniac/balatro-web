@@ -4,10 +4,15 @@
   // Dev channel. With window.BW_DEV = {base, token, id} the same log/command plumbing works against a
   // machine that is always on (over Tailscale), instead of a server on this phone.
   const DEV = window.BW_DEV || null;
-  const q = (p) => DEV ? (DEV.base + p + (p.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(DEV.token)) : p;
-  const idq = (p) => q(p + (DEV ? '&id=' + encodeURIComponent(DEV.id || '') : (p.includes('?') ? '&id=' : '?id=') + encodeURIComponent(window.BW_TAG || '')));
-  const send = (s) => { window.__log.push(s); const url = q('/__log');
-    try { navigator.sendBeacon && !DEV ? navigator.sendBeacon(url, s) : fetch(url, { method: 'POST', body: s, keepalive: true }); } catch (e) {} };
+  // Build URLs the safe way (URLSearchParams) so a token/id can never corrupt the query string.
+  function url(path, params) {
+    const u = DEV ? new URL(DEV.base + path) : new URL(path, location.href);
+    if (DEV) u.searchParams.set('token', DEV.token);
+    if (params && 'id' in params) u.searchParams.set('id', DEV ? (DEV.id || '') : (window.BW_TAG || ''));
+    return u.toString();
+  }
+  const send = (s) => { window.__log.push(s); const u = url('/__log');
+    try { (navigator.sendBeacon && !DEV) ? navigator.sendBeacon(u, s) : fetch(u, { method: 'POST', body: s, keepalive: true }); } catch (e) {} };
   ['log', 'info', 'warn', 'error'].forEach(k => { const o = console[k]; console[k] = function (...a) { send(k + ': ' + a.map(String).join(' ')); o.apply(console, a); }; });
   addEventListener('error', e => send('ONERROR: ' + e.message + ' @' + (e.filename || '') + ':' + e.lineno));
   addEventListener('unhandledrejection', e => send('REJECTION: ' + (e.reason && (e.reason.stack || e.reason))));
@@ -29,7 +34,7 @@
         const c = document.getElementById('canvas') || document.querySelector('canvas');
         if (c && c.width > 300 && (!c.style || getComputedStyle(c).visibility !== 'hidden')) {
           wantShot = false;
-          try { const u = c.toDataURL('image/png'); fetch(q('/__shot'), { method: 'POST', body: u }); window.__send('shot ' + c.width + 'x' + c.height); }
+          try { const u = c.toDataURL('image/png'); fetch(url('/__shot'), { method: 'POST', body: u }); window.__send('shot ' + c.width + 'x' + c.height); }
           catch (e) { window.__send('shot error ' + e); }
         }
       }
@@ -38,7 +43,7 @@
   window.__shot = () => { wantShot = true; };
   setInterval(async () => {
     try {
-      const cmd = (await (await fetch(idq('/__cmd'), { cache: 'no-store' })).text()).trim();
+      const cmd = (await (await fetch(url('/__cmd', { id: 1 }), { cache: 'no-store' })).text()).trim();
       if (!cmd) return;
       if (cmd === 'play') { const b = document.getElementById('play'); b ? b.click() : window.__send('no play button (already running?)'); }
       else if (cmd === 'tap') { const c = document.getElementById('canvas');
