@@ -3,7 +3,7 @@
 html, body { margin: 0; height: 100%; background: #000; color: var(--text); overflow: hidden;
   font: 16px/1.4 -apple-system, system-ui, sans-serif; overscroll-behavior: none; touch-action: none; }
 /* The game canvas always covers the whole viewport, including under the notch/home bar. */
-#canvas { position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100dvh !important;
+#canvas { position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important;
   margin: 0 !important; padding: 0 !important; display: block; outline: none; touch-action: none;
   visibility: hidden; background: #000; z-index: 1; }
 body.running #canvas { visibility: visible; }

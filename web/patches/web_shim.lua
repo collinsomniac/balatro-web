@@ -141,7 +141,10 @@ function WEB.tick(dt)
   WEB.frames = WEB.frames + 1
   if not WEB.booted then
     WEB.booted = true
-    if WEB.want_viewport then apply_viewport(WEB.want_viewport.w, WEB.want_viewport.h, 'boot') end
+    WEB.boot_time = love.timer and love.timer.getTime() or 0
+  elseif WEB.want_viewport and not WEB.boot_sized and (love.timer.getTime() - WEB.boot_time) > 3 then
+    WEB.boot_sized = true
+    apply_viewport(WEB.want_viewport.w, WEB.want_viewport.h, 'boot')
   end
   WEB.t = WEB.t + (dt or 0)
   if WEB.t >= 2 then
@@ -179,13 +182,18 @@ love.window.updateMode = function(w, h, flags)
   return ok and a or b
 end
 love.window.setMode = function(w, h, flags) return love.window.updateMode(w, h, flags) end
+-- The browser owns the canvas size: SDL/emscripten resize it when the viewport changes and LÖVE then
+-- fires love.resize, which the game already handles. Nudging the window ourselves on every viewport
+-- change (Safari's toolbar collapses constantly) put the engine in a resize loop and froze the frame.
+local last_apply = -100
 local function apply_viewport(w, h, why)
   if not (love.graphics and love.graphics.isCreated()) then return false end
+  if love.timer and (love.timer.getTime() - last_apply) < 3 then return false end
   local pw, ph = love.graphics.getPixelWidth(), love.graphics.getPixelHeight()
   local scale = (love.window.getDPIScale and love.window.getDPIScale()) or 1
   if math.abs(pw - w * scale) <= 2 and math.abs(ph - h * scale) <= 2 then return false end
+  last_apply = love.timer.getTime()
   love.window.updateMode(w, h, { fullscreen = false, resizable = true, highdpi = true, vsync = 1 })
-  if love.resize then love.resize(love.graphics.getWidth(), love.graphics.getHeight()) end
   emit('viewport', string.format('{"w":%d,"h":%d,"applied":true,"why":"%s","pixels":%d}', w, h, why, pw))
   return true
 end
@@ -196,15 +204,8 @@ WEB.handlers.viewport = function(d)
   local changed = (w ~= math.floor(WEB.viewport.w)) or (h ~= math.floor(WEB.viewport.h))
   WEB.viewport = { w = w, h = h }
   WEB.want_viewport = { w = w, h = h }
-  -- Resizing the window while the game is still loading makes it rebuild its canvases mid-load, which can
-  -- wedge it on the loading bar. Until the first frames have run we only remember the request.
-  if not WEB.booted then
-    if changed then emit('viewport', string.format('{"w":%d,"h":%d,"deferred":true}', w, h)) end
-    return
-  end
-  if not apply_viewport(w, h, 'rotate') and changed then
-    emit('viewport', string.format('{"w":%d,"h":%d,"applied":false}', w, h))
-  end
+  if not changed then return end
+  emit('viewport', string.format('{"w":%d,"h":%d,"deferred":%s}', w, h, tostring(not WEB.booted)))
 end
 
 -- 8. JS -> Lua: Module.love_send_event('web', json) -> love.userevent -> love.handlers.web(json).
