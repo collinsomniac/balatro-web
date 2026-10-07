@@ -51,12 +51,6 @@
       "replace": "    highdpi = (love.system.getOS() == 'OS X') or (love.system.getOS() == 'Web')"
     },
     {
-      "file": "conf.lua",
-      "label": "web window + save identity",
-      "find": "\tt.window.minheight = 100\n",
-      "replace": "\tt.window.minheight = 100\n\tt.identity = 'balatro-web'\n\tt.window.resizable = true\n\tt.window.highdpi = true\n"
-    },
-    {
       "file": "resources/shaders/hologram.fs",
       "label": "GLSL ES constant loop bound",
       "find": "int glow_samples = 4;",
@@ -66,13 +60,19 @@
       "file": "game.lua",
       "label": "skip-intro option from the shell",
       "find": "    if G.SETTINGS.skip_splash == 'Yes' then \n",
-      "replace": "    if G.SETTINGS.skip_splash == 'Yes' or (__WEB and __WEB.opts and __WEB.opts.skip_splash) then \n"
+      "replace": "    if G.SETTINGS.skip_splash == 'Yes' or (__WEB and __WEB.opts and __WEB.opts.skip_splash) then\n        -- On a fresh save the splash screen is what initialises the tutorial state, so create it\n        -- before jumping to the menu (otherwise the menu indexes a nil table and errors).\n        if not G.SETTINGS.tutorial_complete and (not G.SETTINGS.tutorial_progress) then G.FUNCS.tutorial_controller() end\n"
     },
     {
       "file": "main.lua",
       "label": "frame-rate cap from the shell",
       "find": "\t\tG.FPS_CAP = G.FPS_CAP or 500\n",
       "replace": "\t\tG.FPS_CAP = (__WEB and __WEB.opts and __WEB.opts.fps_cap) or G.FPS_CAP or 500\n"
+    },
+    {
+      "file": "conf.lua",
+      "label": "web window + save identity",
+      "find": "\tt.window.minheight = 100\n",
+      "replace": "\tt.window.minheight = 100\n\tt.identity = 'balatro-web'\n\tt.window.resizable = true\n\tt.window.highdpi = true\n"
     }
   ]
 }

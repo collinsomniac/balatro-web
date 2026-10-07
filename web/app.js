@@ -102,7 +102,7 @@ function applyPatches(files, { set, shim }) {
     texts[p.file] = s.replace(p.find, () => p.replace);
   }
   for (const [f, s] of Object.entries(texts)) files[f] = enc.encode(s);
-  files['web_shim.lua'] = enc.encode(shim);
+  files['web_shim.lua'] = enc.encode(shim);          // shipped as part of the overlay archive
   return ver;
 }
 
@@ -153,7 +153,12 @@ const Bridge = window.BalatroBridge = {
     else if (kind === 'viewport') { log('viewport ' + payload); }
     else if (kind === 'shot') { if (isDev) fetch('/__shot', { method: 'POST', body: 'data:image/png;base64,' + payload }).then(() => log('shot ok ' + payload.length)); }
     else if (kind === 'sync') flushSaves('lua');
-    else if (kind === 'error') { console.error('LUA ERROR ' + payload); log('LUA ERROR ' + payload.split('\n')[0]); }
+    else if (kind === 'error') {
+      console.error('LUA ERROR ' + payload);
+      const first = payload.split('\n')[0];
+      log('LUA ERROR ' + first);
+      banner('Game error: ' + first + '\nIf it repeats, tap "Reset progress" on the menu (☰) — a save written during a crash can cause this.', '');
+    }
     else log('lua ' + kind + ' ' + payload);
     (this.handlers[kind] || []).forEach((fn) => fn(payload));
   },
@@ -191,14 +196,16 @@ async function play() {
 
   UI.stage(55, 'Patching game…', 'reading your copy and applying the web patch set');
   const t0 = performance.now();
+  const patchSet = await loadPatchSet();
   const files = fflate.unzipSync(zip);
   let ver;
-  try { ver = applyPatches(files, await loadPatchSet()); } catch (e) { started = false; UI.stage(0, 'Patching failed', e.message); log('' + e); return; }
+  try { ver = applyPatches(files, patchSet); }
+  catch (e) { started = false; UI.stage(0, 'Patching failed', e.message); log('' + e); return; }
   const patchMs = Math.round(performance.now() - t0);
   log(`patched ${ver} in ${patchMs}ms (${Object.keys(files).length} files)`);
   UI.stage(70, 'Starting engine…', `patched ${ver} in ${patchMs} ms`);
-
   idb.del('game.tmp').catch(() => {});
+
   quality = parseFloat($('quality').value); prefs.quality = quality;
   try { navigator.wakeLock && (window.__wake = await navigator.wakeLock.request('screen')); } catch {}
   UI.body(true); fitCanvas();
@@ -207,18 +214,17 @@ async function play() {
   canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); log('graphics context lost'); started = false; UI.body(false); UI.show('ready'); }, false);
 
   const gl = { frames: 0, t0: performance.now(), showed: false };
-  setTimeout(() => {                       // engine silence watchdog
+  setTimeout(() => {
     if (!lastPerf || lastPerf.fps === undefined) {
-      banner('The engine started but never ran a frame — usually a half-updated cache. Pull to refresh; if it repeats, tap "Copy details" and send it over.', 'info');
+      banner('The engine started but never ran a frame. Pull to refresh; if it repeats, tap "Copy details" and send it over.', 'info');
       UI.show('loading');
     }
   }, 25000);
   Bridge.on('perf', () => {
-    gl.frames = (lastPerf.fps || 0);
     const secs = ((performance.now() - gl.t0) / 1000).toFixed(0);
     const info = `state ${lastPerf.state ?? '?'} · ${lastPerf.fps ?? 0} fps · ${((lastPerf.mem_kb || 0) / 1024).toFixed(0)} MB Lua heap · ${secs}s`;
     $('chip').textContent = info;
-    if (lastPerf.state === 11 && !gl.showed) {         // menu reached: hand over only once it is really drawing
+    if (lastPerf.state === 11 && !gl.showed) {
       gl.menuFrames = (gl.menuFrames || 0) + 1;
       UI.stage(100, 'Ready', 'menu reached after ' + secs + ' s');
       if (gl.menuFrames >= 2) {
@@ -229,9 +235,9 @@ async function play() {
     } else if (!gl.showed) {
       UI.stage(88, 'Loading game…', info);
       if (performance.now() - gl.t0 > 12000) $('skipwait').classList.remove('hidden');
-      if (gl.t0 && performance.now() - gl.t0 > 45000 && !gl.warned) {
+      if (performance.now() - gl.t0 > 45000 && !gl.warned) {
         gl.warned = true;
-        banner('Still loading after 45 s. Tap "Copy details" below and send it over — the log will say where it stopped.', 'info');
+        banner('Still loading after 45 s. Tap "Copy details" and send it over — the log will say where it stopped.', 'info');
         UI.show('loading');
       }
     }
@@ -245,6 +251,8 @@ async function play() {
     setStatus: (t) => t && log('rt: ' + t),
     totalDependencies: 0, monitorRunDependencies: (n) => n && UI.stage(86, 'Preparing…', n + ' steps left'),
     preRun: [() => {
+      // Write the patched game straight into the engine's filesystem as a directory (LÖVE refuses to mount
+      // an archive that sits inside the game folder, so a zip overlay is not an option).
       const M = window.LoveState, root = '/home/web_user/love';
       M.FS_createPath('/home/web_user', 'love', true, true);
       const made = new Set();
@@ -317,6 +325,21 @@ async function copyDetails() {
   log('details copied (' + t.length + ' chars)');
 }
 
+/* Wipe the engine's saved state. A save written during a crashed run can make the game error on load,
+ * and this is the recovery path (it also runs while the game is wedged). */
+async function resetProgress() {
+  if (!confirm('Delete the saved settings and progress kept in this browser?')) return;
+  try { indexedDB.deleteDatabase('/home/web_user/savedir'); } catch (e) {}
+  try {
+    const FS = window.LoveState && window.LoveState.FS, base = '/home/web_user/savedir';
+    if (FS) for (const n of FS.readdir(base)) { if (n === '.' || n === '..') continue;
+      const p = base + '/' + n;
+      try { FS.isDir(FS.stat(p).mode) ? FS.rmdir(p) : FS.unlink(p); } catch (e) {} }
+  } catch (e) { log('reset: ' + e) }
+  log('progress reset');
+  location.reload();
+}
+
 /* ---------- saves export ---------- */
 async function exportSaves() {
   const FS = window.LoveState && window.LoveState.FS;
@@ -371,6 +394,7 @@ $('menu').addEventListener('click', () => { UI.body(false); UI.show('ready'); })
 $('reload').addEventListener('click', () => location.reload());
 $('settings').addEventListener('click', () => Keys.open());
 $('export').addEventListener('click', exportSaves);
+$('resetsave').addEventListener('click', resetProgress);
 $('forget').addEventListener('click', async () => { if (confirm('Remove the stored game file from this browser? (Saves are kept.)')) { await idb.del('game'); await idb.del('game.meta'); UI.show('setup'); } });
 $('quality').value = String(prefs.quality);
 $('showperf').checked = prefs.perf; $('perf').classList.toggle('hidden', !prefs.perf);
