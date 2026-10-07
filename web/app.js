@@ -442,7 +442,8 @@ if (isDev) {
 } else if (devSpec) {
   const at = devSpec.lastIndexOf('@');
   const devToken = at > 0 ? devSpec.slice(0, at) : devSpec;
-  const host = at > 0 ? devSpec.slice(at + 1).replace(/^https?:\/\//, '').replace(/\/$/, '') : '';
+  const hostRaw = (qs.get('devh') || (at > 0 ? devSpec.slice(at + 1) : '')).trim();
+  const host = hostRaw.replace(/^https?:\/\//, '').replace(/\/$/, '');
   const base = host ? 'https://' + host : (prefs.src || '').trim().replace(/\/$/, '');
   window.BW_DEV = { base, token: devToken, id: TAG };
   const s = document.createElement('script'); s.src = 'beacon.js'; document.head.appendChild(s);
