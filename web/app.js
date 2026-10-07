@@ -435,11 +435,15 @@ if (qs.get('src')) prefs.src = qs.get('src');
 if ('serviceWorker' in navigator && !isDev) navigator.serviceWorker.register('sw.js').catch(() => {});
 // Testing channel: with ?dev=TOKEN the page reports its log to your computer and takes commands from it,
 // so the agent can drive and screenshot this page even when nothing runs on the phone.
-const devToken = qs.get('dev');
+// ?dev=<token>@<host>  e.g. ?dev=abc123@my-pc.tailnet.ts.net   (one parameter, so no & to lose)
+const devSpec = qs.get('dev') || '';
 if (isDev) {
   const s = document.createElement('script'); s.src = '/dev/beacon.js'; document.head.appendChild(s);
-} else if (devToken && (prefs.src || qs.get('src'))) {
-  const base = (qs.get('src') || prefs.src || '').trim().replace(/\/$/, '');
+} else if (devSpec) {
+  const at = devSpec.lastIndexOf('@');
+  const devToken = at > 0 ? devSpec.slice(0, at) : devSpec;
+  const host = at > 0 ? devSpec.slice(at + 1).replace(/^https?:\/\//, '').replace(/\/$/, '') : '';
+  const base = host ? 'https://' + host : (prefs.src || '').trim().replace(/\/$/, '');
   window.BW_DEV = { base, token: devToken, id: TAG };
   const s = document.createElement('script'); s.src = 'beacon.js'; document.head.appendChild(s);
   log('dev channel → ' + base);
