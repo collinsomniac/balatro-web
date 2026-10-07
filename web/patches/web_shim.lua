@@ -144,7 +144,7 @@ function WEB.tick(dt)
     WEB.boot_time = love.timer and love.timer.getTime() or 0
   elseif WEB.want_viewport and not WEB.boot_sized and (love.timer.getTime() - WEB.boot_time) > 3 then
     WEB.boot_sized = true
-    apply_viewport(WEB.want_viewport.w, WEB.want_viewport.h, 'boot')
+    WEB.apply_viewport(WEB.want_viewport.w, WEB.want_viewport.h, 'boot')
   end
   WEB.t = WEB.t + (dt or 0)
   if WEB.t >= 2 then
@@ -185,14 +185,14 @@ love.window.setMode = function(w, h, flags) return love.window.updateMode(w, h, 
 -- The browser owns the canvas size: SDL/emscripten resize it when the viewport changes and LÖVE then
 -- fires love.resize, which the game already handles. Nudging the window ourselves on every viewport
 -- change (Safari's toolbar collapses constantly) put the engine in a resize loop and froze the frame.
-local last_apply = -100
-local function apply_viewport(w, h, why)
+WEB.apply_viewport = function(w, h, why)
+  local last_apply = WEB.last_apply or -100
   if not (love.graphics and love.graphics.isCreated()) then return false end
   if love.timer and (love.timer.getTime() - last_apply) < 3 then return false end
   local pw, ph = love.graphics.getPixelWidth(), love.graphics.getPixelHeight()
   local scale = (love.window.getDPIScale and love.window.getDPIScale()) or 1
   if math.abs(pw - w * scale) <= 2 and math.abs(ph - h * scale) <= 2 then return false end
-  last_apply = love.timer.getTime()
+  WEB.last_apply = love.timer.getTime()
   love.window.updateMode(w, h, { fullscreen = false, resizable = true, highdpi = true, vsync = 1 })
   emit('viewport', string.format('{"w":%d,"h":%d,"applied":true,"why":"%s","pixels":%d}', w, h, why, pw))
   return true
