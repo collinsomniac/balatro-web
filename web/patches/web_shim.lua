@@ -143,6 +143,10 @@ function WEB.tick(dt)
     WEB.reveal_hooked = true
     pcall(_G.__CARDREVEAL.install)          -- now that love.update/love.draw exist
   end
+  if not WEB.shop_hooked and _G.__CARDREVEAL and G and G.UIDEF and G.UIDEF.shop then
+    WEB.shop_hooked = true
+    pcall(_G.__CARDREVEAL.install_shop_button)   -- the Generate button joins the shop's own button column
+  end
   if not WEB.booted then
     WEB.booted = true
     WEB.boot_time = love.timer and love.timer.getTime() or 0
