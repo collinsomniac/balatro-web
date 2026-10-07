@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Balatro Web">
 <meta name="theme-color" content="#1b2a33">
@@ -16,48 +15,75 @@
 <body>
 <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
 
-<div id="shell" class="panel">
+<!-- ============ loader: file picking ============ -->
+<section id="setup" class="panel">
   <h1>Balatro <span>web</span></h1>
-  <p class="sub">Plays <b>your own copy</b> of Balatro in the browser. Nothing from the game is hosted here — you pick the file once, it's patched on this device and kept in this browser's storage.</p>
+  <p class="sub">Plays <b>your own copy</b> of Balatro in this browser. The game file is patched on your
+  device and kept in this browser's storage — never uploaded.</p>
 
-  <div id="step-file" class="step">
-    <label class="btn primary" for="file">Choose Balatro.exe or game.love</label>
-    <input id="file" type="file" accept=".exe,.love,.zip,application/octet-stream" hidden>
-    <p class="hint">Steam: <code>steamapps/common/Balatro/Balatro.exe</code>. AirDrop it to Files, then pick it here.</p>
-  </div>
-
-  <div id="step-play" class="step hidden">
-    <button id="play" class="btn primary big">▶ Tap to play</button>
-    <div class="row">
-      <label>Quality
-        <select id="quality">
-          <option value="1">Battery (1×)</option>
-          <option value="1.5">Balanced (1.5×)</option>
-          <option value="2" selected>Sharp (2×)</option>
-          <option value="3">Native (3×)</option>
-        </select>
-      </label>
-      <label><input type="checkbox" id="showperf"> FPS overlay</label>
+  <div class="cards">
+    <div class="card">
+      <h2>From my computer</h2>
+      <p class="hint">Over your Tailscale network. Run <code>serve.py</code> next to your Steam install, then
+      paste its address here.</p>
+      <label class="sr">Address <input id="src" placeholder="https://my-pc.tailnet.ts.net"></label>
+      <button id="scan" class="btn primary">Find my game</button>
+      <ul id="found" class="found"></ul>
     </div>
-    <div class="row small">
-      <button id="settings" class="link">Keys &amp; co-op</button>
-      <button id="export" class="link">Export saves</button>
-      <button id="forget" class="link danger">Forget game file</button>
+    <div class="card">
+      <h2>From this device</h2>
+      <p class="hint">Pick a file you've AirDropped to Files. Steam:
+      <code>steamapps/common/Balatro/Balatro.exe</code></p>
+      <label class="btn" for="file">Choose a file…</label>
+      <input id="file" type="file" accept=".exe,.love,.zip,application/octet-stream" hidden>
     </div>
-    <p id="gameinfo" class="hint"></p>
   </div>
-
   <p id="status" class="status"></p>
-  <p id="install" class="hint hidden">For true full-screen: <b>Share → Add to Home Screen</b>, then launch from the icon and turn your phone sideways.</p>
-</div>
+  <p class="hint">iPhone: after loading once, use <b>Share → Add to Home Screen</b> and launch from the icon
+  for true full-screen.</p>
+</section>
 
+<!-- ============ loader: progress ============ -->
+<section id="loading" class="panel hidden">
+  <h1>Balatro <span>web</span></h1>
+  <div class="progress"><div id="bar"></div></div>
+  <p id="stage" class="stage">Starting…</p>
+  <p id="detail" class="hint"></p>
+  <details id="logbox"><summary>Details</summary><pre id="log"></pre></details>
+</section>
+
+<!-- ============ loader: ready ============ -->
+<section id="ready" class="panel hidden">
+  <h1>Balatro <span>web</span></h1>
+  <button id="play" class="btn primary big">▶ Tap to play</button>
+  <div class="row">
+    <label>Quality <select id="quality">
+      <option value="1">Battery (1×)</option>
+      <option value="1.5">Balanced (1.5×)</option>
+      <option value="2" selected>Sharp (2×)</option>
+      <option value="3">Native (3×)</option>
+    </select></label>
+    <label><input type="checkbox" id="skipsplash" checked> Skip intro</label>
+    <label><input type="checkbox" id="showperf"> FPS</label>
+  </div>
+  <p id="gameinfo" class="hint"></p>
+  <div class="row small">
+    <button id="settings" class="link">Keys &amp; co-op</button>
+    <button id="export" class="link">Export saves</button>
+    <button id="reload" class="link">Reload game</button>
+    <button id="forget" class="link danger">Forget file</button>
+  </div>
+</section>
+
+<button id="menu" class="fab hidden" title="Menu">☰</button>
 <div id="rotate" class="hidden"><div>↻<br>Turn your phone sideways</div></div>
 <div id="perf" class="hidden"></div>
 
 <dialog id="keys">
   <form method="dialog">
     <h2>Keys</h2>
-    <p class="hint">Only the <b>host</b> of a co-op room needs a key. It is stored <b>only in this browser</b> (localStorage) and sent only to OpenRouter, never to our server or other players.</p>
+    <p class="hint">Only the <b>host</b> of a co-op room needs a key. It is stored <b>only in this browser</b>
+    (localStorage) and sent only to OpenRouter — never to our server or other players.</p>
     <label>OpenRouter API key <input id="k-openrouter" type="password" autocomplete="off" placeholder="sk-or-…"></label>
     <label>Model <input id="k-model" placeholder="default"></label>
     <menu><button value="clear" class="link danger">Clear</button><button value="save" class="btn primary">Save</button></menu>

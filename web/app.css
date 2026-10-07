@@ -7,7 +7,23 @@ html, body { margin: 0; height: 100%; background: #000; color: var(--text); over
   margin: 0 !important; padding: 0 !important; display: block; outline: none; touch-action: none;
   visibility: hidden; background: #000; z-index: 1; }
 body.running #canvas { visibility: visible; }
-body.running #shell { display: none; }
+body.running .panel { display: none; }
+.cards { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; max-width: 900px; }
+.card { flex: 1 1 320px; max-width: 420px; background: #0006; border: 1px solid #456; border-radius: 14px; padding: 16px; text-align: left; }
+.card h2 { margin: 0 0 6px; font-size: 18px; }
+.card .btn { margin-top: 8px; }
+.found { list-style: none; padding: 0; margin: 10px 0 0; }
+.found li { display: flex; gap: 10px; align-items: center; margin: 6px 0; }
+.progress { width: min(560px, 84vw); height: 10px; background: #0007; border-radius: 6px; overflow: hidden; margin: 10px 0; }
+#bar { height: 100%; width: 0; background: linear-gradient(90deg, var(--blue), var(--red)); transition: width .25s; }
+.stage { font-size: 18px; margin: 4px 0; }
+#logbox { max-width: min(620px, 88vw); text-align: left; margin-top: 10px; }
+#logbox summary { cursor: pointer; color: var(--blue); }
+#log { max-height: 32vh; overflow: auto; font: 11px/1.35 ui-monospace, monospace; background: #0009; padding: 8px; border-radius: 8px; white-space: pre-wrap; }
+.fab { position: fixed; z-index: 12; right: max(10px, env(safe-area-inset-right)); top: max(10px, env(safe-area-inset-top));
+  width: 44px; height: 44px; border-radius: 50%; border: 0; background: #0007; color: #fff; font-size: 20px; }
+.sr { display: block; text-align: left; margin: 8px 0; font-size: 13px; }
+.sr input { width: 100%; }
 .panel { position: fixed; inset: 0; overflow: auto; touch-action: pan-y; padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) 24px max(24px, env(safe-area-inset-left));
   background: radial-gradient(circle at 30% 20%, #2e4a5a, var(--bg)); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 8px; }
 h1 { margin: 0; font-size: 44px; letter-spacing: 1px; color: var(--red); text-shadow: 0 3px 0 #7a2420; }

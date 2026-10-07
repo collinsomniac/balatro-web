@@ -1,22 +1,36 @@
 /* Balatro Web: bring-your-own-game loader + full-screen shell for love.js (LÖVE 11.5, single-threaded).
- * The player's game file is stored ONLY in their browser (IndexedDB). It is patched at every launch
- * from patches/*.json + web_shim.lua, so patch updates apply automatically without re-picking the file. */
+ * The player's game file is stored ONLY in their browser (IndexedDB) and is patched at every launch from
+ * patches/*.json + web_shim.lua, so patch updates apply without re-picking the file. */
 (() => {
 'use strict';
 const $ = (id) => document.getElementById(id);
 const isDev = ['127.0.0.1', 'localhost'].includes(location.hostname);
-// dev tabs share one command queue; tag each launch so the agent can target this tab
 const TAG = window.BW_TAG = new URLSearchParams(location.search).get('tag') || (isDev ? 'tab' + Math.random().toString(36).slice(2, 6) : '');
+const qs = new URLSearchParams(location.search);
+const log = (...a) => { const line = a.join(' '); (window.__send ? __send(line) : console.log(line));
+  const el = $('log'); if (el) { el.textContent += line + '\n'; el.scrollTop = el.scrollHeight; if (el.textContent.length > 20000) el.textContent = el.textContent.slice(-15000); } };
 const status = (t) => { $('status').textContent = t || ''; if (t) log('status: ' + t); };
-const log = (...a) => (window.__send ? window.__send(a.join(' ')) : console.log(...a));
+
+/* ---------- stage/progress UI ---------- */
+const UI = {
+  stage(pct, name, detail) { $('bar').style.width = pct + '%'; $('stage').textContent = name; $('detail').textContent = detail || ''; },
+  show(which) { for (const s of ['setup', 'loading', 'ready']) $(s).classList.toggle('hidden', s !== which); },
+  get bodyActive() { return document.body.classList.contains('running'); },
+  body(running) { document.body.classList.toggle('running', running); $('menu').classList.toggle('hidden', !running); },
+};
+
 const prefs = {
   get quality() { return parseFloat(localStorage.getItem('bw.quality') || '2'); },
   set quality(v) { localStorage.setItem('bw.quality', String(v)); },
   get perf() { return localStorage.getItem('bw.perf') === '1'; },
   set perf(v) { localStorage.setItem('bw.perf', v ? '1' : '0'); },
+  get skipsplash() { return localStorage.getItem('bw.skipsplash') !== '0'; },
+  set skipsplash(v) { localStorage.setItem('bw.skipsplash', v ? '1' : '0'); },
+  get src() { return localStorage.getItem('bw.src') || ''; },
+  set src(v) { localStorage.setItem('bw.src', v); },
 };
 
-/* ---------- tiny IndexedDB key/value store ---------- */
+/* ---------- storage ---------- */
 const idb = (() => {
   let dbp;
   const db = () => dbp ||= new Promise((res, rej) => {
@@ -25,38 +39,45 @@ const idb = (() => {
     r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
   });
   const tx = async (mode, fn) => { const d = await db(); return new Promise((res, rej) => {
-    const t = d.transaction('kv', mode); const s = t.objectStore('kv'); const r = fn(s);
+    const t = d.transaction('kv', mode); const r = fn(t.objectStore('kv'));
     t.oncomplete = () => res(r && r.result); t.onerror = () => rej(t.error); }); };
   return { get: (k) => tx('readonly', (s) => s.get(k)), set: (k, v) => tx('readwrite', (s) => s.put(v, k)), del: (k) => tx('readwrite', (s) => s.delete(k)) };
 })();
 
-/* ---------- game file: locate the zip inside Balatro.exe (fused LÖVE exe) ---------- */
+/* ---------- streamed download with progress (also used to preload the wasm engine) ---------- */
+async function fetchWithProgress(url, onPct) {
+  const res = await fetch(url); if (!res.ok) throw new Error(`${url} → HTTP ${res.status}`);
+  const total = +(res.headers.get('Content-Length') || 0);
+  if (!res.body || !total) return new Uint8Array(await res.arrayBuffer());
+  const reader = res.body.getReader(); const chunks = []; let got = 0;
+  for (;;) { const { done, value } = await reader.read(); if (done) break; chunks.push(value); got += value.length; onPct && onPct(got / total, got, total); }
+  const out = new Uint8Array(got); let o = 0; for (const c of chunks) { out.set(c, o); o += c.length; }
+  return out;
+}
+const mb = (n) => (n / 1048576).toFixed(1) + ' MB';
+
+/* ---------- game file: locate the zip inside Balatro.exe (a fused LÖVE exe) ---------- */
 function extractZip(u8) {
-  // End-of-central-directory record: last 22..65557 bytes.
   const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
   for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) {
     if (dv.getUint32(i, true) === 0x06054b50) {
       const cdSize = dv.getUint32(i + 12, true), cdOff = dv.getUint32(i + 16, true);
-      const start = i - cdSize - cdOff;            // where the zip begins inside the exe
+      const start = i - cdSize - cdOff;
       if (start >= 0) return u8.subarray(start);
     }
   }
-  throw new Error('No game archive found in that file. Pick Balatro.exe (Windows/Steam) or a game.love.');
+  throw new Error('No game archive found in that file. Pick Balatro.exe or a game.love.');
 }
-
-async function importFile(file) {
-  status(`Reading ${file.name} (${(file.size / 1e6).toFixed(1)} MB)…`);
-  const u8 = new Uint8Array(await file.arrayBuffer());
+async function importBytes(u8, name) {
   const zip = extractZip(u8);
-  const files = fflate.unzipSync(zip, { filter: (f) => f.name === 'version.jkr' });
-  const ver = new TextDecoder().decode(files['version.jkr'] || new Uint8Array()).split('\n')[0] || 'unknown';
-  await idb.set('game', zip.slice());           // copy: drop the exe header bytes
-  await idb.set('game.meta', { name: file.name, size: zip.length, version: ver, added: Date.now() });
-  status('');
-  return ver;
+  const meta = fflate.unzipSync(zip, { filter: (f) => f.name === 'version.jkr' });
+  const version = new TextDecoder().decode(meta['version.jkr'] || new Uint8Array()).split('\n')[0] || 'unknown';
+  await idb.set('game', zip.slice());
+  await idb.set('game.meta', { name, size: zip.length, version, added: Date.now() });
+  return version;
 }
 
-/* ---------- patching (exact-match, fail loudly) ---------- */
+/* ---------- patching: exact-match, fails loudly ---------- */
 async function loadPatchSet() {
   const [set, shim] = await Promise.all([
     fetch('patches/balatro-1.0.1.json', { cache: 'no-cache' }).then((r) => r.json()),
@@ -71,9 +92,9 @@ function applyPatches(files, { set, shim }) {
   const texts = {};
   for (const p of set.patches) {
     if (!files[p.file]) throw new Error(`Patch "${p.label}": ${p.file} missing (game ${ver})`);
-    let s = texts[p.file] ?? dec.decode(files[p.file]);
+    const s = texts[p.file] ?? dec.decode(files[p.file]);
     const n = s.split(p.find).length - 1;
-    if (n !== 1) throw new Error(`Patch "${p.label}" failed in ${p.file}: ${n} matches (game ${ver}). This game version isn't supported yet.`);
+    if (n !== 1) throw new Error(`Patch "${p.label}" failed in ${p.file}: ${n} matches (game ${ver}). This version isn't supported yet.`);
     texts[p.file] = s.replace(p.find, () => p.replace);
   }
   for (const [f, s] of Object.entries(texts)) files[f] = enc.encode(s);
@@ -81,26 +102,29 @@ function applyPatches(files, { set, shim }) {
   return ver;
 }
 
-/* ---------- display: full-screen canvas, quality = render scale ---------- */
+/* ---------- display ---------- */
 let quality = prefs.quality;
 try { Object.defineProperty(window, 'devicePixelRatio', { configurable: true, get: () => quality }); } catch (e) { log('dpr override failed ' + e); }
 function fitCanvas() {
   const portrait = innerHeight > innerWidth;
-  $('rotate').classList.toggle('hidden', !(document.body.classList.contains('running') && portrait));
+  $('rotate').classList.toggle('hidden', !(UI.bodyActive && portrait));
 }
-addEventListener('resize', fitCanvas);
-addEventListener('orientationchange', () => setTimeout(fitCanvas, 300));
-const standalone = matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone;
-if (!standalone && /iPhone|iPad|Mac/.test(navigator.platform + navigator.userAgent)) $('install').classList.remove('hidden');
+addEventListener('resize', fitCanvas); addEventListener('orientationchange', () => setTimeout(fitCanvas, 300));
 
-/* ---------- audio: WebKit keeps contexts suspended until a gesture; resume all of them on every tap ---------- */
+/* ---------- audio: WebKit suspends AudioContexts until a gesture ---------- */
 const audioCtxs = [];
-for (const name of ['AudioContext', 'webkitAudioContext']) {
-  const AC = window[name]; if (!AC) continue;
-  window[name] = class extends AC { constructor(...a) { super(...a); audioCtxs.push(this); } };
+for (const n of ['AudioContext', 'webkitAudioContext']) {
+  const AC = window[n]; if (!AC) continue;
+  window[n] = class extends AC { constructor(...a) { super(...a); audioCtxs.push(this); } };
 }
-const resumeAudio = () => audioCtxs.forEach((c) => c.state !== 'running' && c.resume().catch(() => {}));
-['pointerdown', 'touchend', 'keydown'].forEach((e) => addEventListener(e, resumeAudio, { capture: true, passive: true }));
+const unlock = (c) => {   // iOS: play a silent buffer inside a real gesture, then resume
+  if (c.__unlocked) return; c.__unlocked = true;
+  try { const b = c.createBuffer(1, 1, 22050), src = c.createBufferSource();
+    src.buffer = b; src.connect(c.destination); src.start(0); } catch {}
+};
+const resumeAudio = () => { audioCtxs.forEach(unlock); const r = audioCtxs.map((c) => c.state !== 'running' && c.resume().catch(() => {}));
+  if (window.__send) __send(`audio: ${audioCtxs.length} ctx, ${audioCtxs.map((c) => c.state).join('/') || 'none'}`); return r; };
+['pointerdown', 'touchend', 'keydown', 'click'].forEach((e) => addEventListener(e, resumeAudio, { capture: true, passive: true }));
 document.addEventListener('visibilitychange', () => { if (!document.hidden) resumeAudio(); });
 
 /* ---------- perf overlay ---------- */
@@ -108,114 +132,170 @@ let rafFrames = 0, lastPerf = {};
 (function raf() { rafFrames++; requestAnimationFrame(raf); })();
 setInterval(() => {
   if (prefs.perf && document.body.classList.contains('running')) {
-    const p = lastPerf; const c = $('canvas');
-    $('perf').textContent = `page ${rafFrames}fps  lua ${p.fps ?? '-'}fps  slow ${p.long ?? 0}  worst ${p.worst_ms ?? 0}ms\n${c.width}×${c.height} @${quality}x  lua ${((p.mem_kb || 0) / 1024).toFixed(0)}MB`;
+    const p = lastPerf, c = $('canvas');
+    $('perf').textContent = `page ${rafFrames}fps  lua ${p.fps ?? '-'}fps  slow ${p.long ?? 0}  worst ${p.worst_ms ?? 0}ms\n${c.width}×${c.height} @${quality}×  lua ${((p.mem_kb || 0) / 1024).toFixed(0)}MB`;
   }
   rafFrames = 0;
 }, 1000);
 
 /* ---------- Lua <-> JS bridge ---------- */
 const Bridge = window.BalatroBridge = {
-  handlers: {},
-  on(kind, fn) { (this.handlers[kind] ||= []).push(fn); },
-  // JS -> Lua: arrives in web_shim as love.handlers.web
+  handlers: {}, on(kind, fn) { (this.handlers[kind] ||= []).push(fn); },
   send(cmd, data) { const M = window.LoveState; if (M && M.love_send_event) M.love_send_event('web', JSON.stringify({ c: cmd, d: data ?? null }), 0); },
   fromLua(line) {
-    const sp = line.indexOf(' '); const kind = sp < 0 ? line : line.slice(0, sp); const payload = sp < 0 ? '' : line.slice(sp + 1);
-    if (kind === 'boot') { sendViewport(); }
-    else if (kind === 'viewport') log('viewport ' + payload);
+    const sp = line.indexOf(' '), kind = sp < 0 ? line : line.slice(0, sp), payload = sp < 0 ? '' : line.slice(sp + 1);
     if (kind === 'perf') { try { lastPerf = JSON.parse(payload); } catch {} if (isDev) log('perf ' + payload); }
-    else if (kind === 'sync') flushSaves('lua');
+    else if (kind === 'boot') { log('engine boot ' + payload); }
+    else if (kind === 'viewport') { log('viewport ' + payload); }
     else if (kind === 'shot') { if (isDev) fetch('/__shot', { method: 'POST', body: 'data:image/png;base64,' + payload }).then(() => log('shot ok ' + payload.length)); }
-    else if (kind === 'error') { console.error('LUA ERROR ' + payload); status('Game error — see console'); }
+    else if (kind === 'sync') flushSaves('lua');
+    else if (kind === 'error') { console.error('LUA ERROR ' + payload); log('LUA ERROR ' + payload.split('\n')[0]); }
     else log('lua ' + kind + ' ' + payload);
     (this.handlers[kind] || []).forEach((fn) => fn(payload));
   },
 };
-function sendViewport() {
-  if (!window.LoveState || !window.LoveState.love_send_event) return;
-  Bridge.send('viewport', { w: Math.round(innerWidth), h: Math.round(innerHeight), dpr: quality });
-}
+function sendViewport() { if (window.LoveState && window.LoveState.love_send_event) Bridge.send('viewport', { w: Math.round(innerWidth), h: Math.round(innerHeight), dpr: quality }); }
 let vpT;
 addEventListener('resize', () => { clearTimeout(vpT); vpT = setTimeout(() => { sendViewport(); fitCanvas(); }, 250); });
 addEventListener('orientationchange', () => setTimeout(() => { sendViewport(); fitCanvas(); }, 400));
-function flushSaves(why) {
-  const FS = window.LoveState && window.LoveState.FS; if (!FS) return;
-  try { FS.syncfs(false, (e) => e && log('syncfs ' + why + ' ' + e)); } catch (e) { log('flush error ' + e); }
-}
+function flushSaves(why) { const FS = window.LoveState && window.LoveState.FS; if (!FS) return;
+  try { FS.syncfs(false, (e) => e && log('syncfs ' + why + ' ' + e)); } catch (e) { log('flush error ' + e); } }
 addEventListener('pagehide', () => flushSaves('pagehide'));
 document.addEventListener('visibilitychange', () => { if (document.hidden) flushSaves('hidden'); });
+Bridge.on('boot', () => { sendViewport(); Bridge.send('opts', { fps_cap: 60, skip_splash: prefs.skipsplash }); });
 
 /* ---------- launch ---------- */
+let engineBytes = null, started = false;
+async function preloadEngine() {
+  if (engineBytes) return engineBytes;
+  UI.stage(8, 'Downloading engine…', 'LÖVE 11.5 · WebAssembly');
+  engineBytes = await fetchWithProgress('runtime/love.wasm', (p, got, total) =>
+    UI.stage(8 + p * 42, 'Downloading engine…', `${mb(got)} of ${mb(total)}`));
+  return engineBytes;
+}
+
 async function play() {
+  if (started) {                    // engine already running: just bring it back to the front
+    UI.show(null); UI.body(true); sendViewport(); fitCanvas(); return;
+  }
   const zip = await idb.get('game');
-  if (!zip) return showStep();
-  quality = parseFloat($('quality').value); prefs.quality = quality;
-  status('Patching…');
+  if (!zip) { UI.show('setup'); return; }
+  started = true;
+  UI.show('loading');
+  try { await navigator.storage?.persist?.(); } catch {}
+  try { await preloadEngine(); } catch (e) { started = false; UI.stage(0, 'Engine download failed', String(e)); return; }
+
+  UI.stage(55, 'Patching game…', 'reading your copy and applying the web patch set');
   const t0 = performance.now();
   const files = fflate.unzipSync(zip);
   let ver;
-  try { ver = applyPatches(files, await loadPatchSet()); }
-  catch (e) { status(e.message); return; }
-  log(`patched ${ver} in ${Math.round(performance.now() - t0)}ms`);
-  status('Starting…');
+  try { ver = applyPatches(files, await loadPatchSet()); } catch (e) { started = false; UI.stage(0, 'Patching failed', e.message); log('' + e); return; }
+  const patchMs = Math.round(performance.now() - t0);
+  log(`patched ${ver} in ${patchMs}ms (${Object.keys(files).length} files)`);
+  UI.stage(70, 'Starting engine…', `patched ${ver} in ${patchMs} ms`);
+
+  idb.del('game.tmp').catch(() => {});
+  quality = parseFloat($('quality').value); prefs.quality = quality;
   try { navigator.wakeLock && (window.__wake = await navigator.wakeLock.request('screen')); } catch {}
-  try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch {}
-  document.body.classList.add('running'); fitCanvas();
+  UI.body(true); fitCanvas();
 
   const canvas = $('canvas');
-  canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); status('Graphics reset by iOS — reload to continue'); document.body.classList.remove('running'); }, false);
+  canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); log('graphics context lost'); started = false; UI.body(false); UI.show('ready'); }, false);
+
+  const gl = { frames: 0, t0: performance.now(), showed: false };
+  Bridge.on('perf', () => {
+    gl.frames = (lastPerf.fps || 0);
+    if (lastPerf.state === 11 && !gl.showed) {   // main menu reached -> play
+      gl.showed = true;
+      UI.stage(100, 'Ready', `menu reached after ${((performance.now() - gl.t0) / 1000).toFixed(1)} s`);
+      setTimeout(() => { UI.show(null); UI.body(true); fitCanvas(); }, 300);
+    } else if (!gl.showed) {
+      const s = ((performance.now() - gl.t0) / 1000).toFixed(1);
+      UI.stage(88, 'Loading game assets…', `${s}s · ${lastPerf.fps ?? 0} fps · ${((lastPerf.mem_kb || 0) / 1024).toFixed(0)} MB Lua heap`);
+    }
+  });
+
   window.LoveState = {
-    arguments: [], canvas,
+    arguments: [], canvas, wasmBinary: engineBytes,
     print: (...a) => { const t = a.join(' '); if (t.startsWith('__WEB__:')) Bridge.fromLua(t.slice(8)); else if (isDev) log('lua: ' + t); },
     printErr: (...a) => console.error(...a),
     locateFile: (p) => 'runtime/' + p,
-    setStatus: (t) => { if (t) log('rt: ' + t); },
-    totalDependencies: 0, monitorRunDependencies: () => {},
+    setStatus: (t) => t && log('rt: ' + t),
+    totalDependencies: 0, monitorRunDependencies: (n) => n && UI.stage(86, 'Preparing…', n + ' steps left'),
     preRun: [() => {
-      // Directory-mode game: write every file into MEMFS under /home/web_user/love/
       const M = window.LoveState, root = '/home/web_user/love';
       M.FS_createPath('/home/web_user', 'love', true, true);
       const made = new Set();
       for (const [name, data] of Object.entries(files)) {
         if (name.endsWith('/')) continue;
-        const i = name.lastIndexOf('/'); const dir = i < 0 ? '' : name.slice(0, i);
+        const i = name.lastIndexOf('/'), dir = i < 0 ? '' : name.slice(0, i);
         if (dir && !made.has(dir)) { M.FS_createPath(root, dir, true, true); made.add(dir); }
         M.FS_createDataFile(root + (dir ? '/' + dir : ''), name.slice(i + 1), data, true, true, true);
         delete files[name];
       }
     }],
   };
-  window.__sendViewport = sendViewport;
   const s = document.createElement('script'); s.src = 'runtime/love.js';
-  s.onload = () => {
-    setTimeout(sendViewport, 500); setTimeout(sendViewport, 2500);
-    Love(window.LoveState).catch((e) => { console.error(e); status('Engine failed: ' + e); });
-  };
-  s.onerror = () => status('Could not load the engine (runtime/love.js)');
+  s.onload = () => { setTimeout(sendViewport, 800);
+    Love(window.LoveState).catch((e) => { console.error(e); started = false; UI.stage(0, 'Engine failed', String(e)); log('engine failed ' + e); }); };
+  s.onerror = () => { started = false; UI.stage(0, 'Could not load runtime/love.js', ''); };
   document.body.appendChild(s);
+}
+
+/* ---------- load from the player's computer ---------- */
+async function scanComputer() {
+  const base = ($('src').value || '').trim().replace(/\/$/, '');
+  if (!base) return status('Enter the address of your computer first.');
+  prefs.src = base; status('Looking for games…');
+  try {
+    const r = await fetch(base + '/manifest.json', { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    $('found').innerHTML = '';
+    if (!j.files.length) return status('No .exe or .love files in that folder.');
+    for (const f of j.files) {
+      const li = document.createElement('li');
+      li.innerHTML = `<button class="btn">${f.name}</button> <span class="hint">${mb(f.size)} · ${new Date(f.mtime * 1000).toLocaleDateString()}</span>`;
+      li.querySelector('button').onclick = () => downloadFrom(base, f);
+      $('found').appendChild(li);
+    }
+    status(`Found ${j.files.length} on ${j.host}.`);
+  } catch (e) { status('Could not reach that address: ' + e.message); }
+}
+async function downloadFrom(base, f) {
+  UI.show('loading'); UI.stage(2, 'Downloading ' + f.name, 'from ' + base);
+  try {
+    const u8 = await fetchWithProgress(base + '/' + f.rel, (p, got, total) => UI.stage(2 + p * 50, 'Downloading ' + f.name, `${mb(got)} of ${mb(total)}`));
+    UI.stage(54, 'Checking file…', '');
+    const ver = await importBytes(u8, f.name);
+    log(`imported ${f.name} (game ${ver})`);
+    UI.stage(100, 'Ready', '');
+    await preloadEngine().catch(() => {});
+    showReady();
+  } catch (e) { UI.stage(0, 'Download failed', e.message); log('download failed: ' + e.message); }
 }
 
 /* ---------- saves export ---------- */
 async function exportSaves() {
   const FS = window.LoveState && window.LoveState.FS;
-  if (!FS) { status('Start the game once, then export.'); return; }
-  const out = {}; const base = '/home/web_user/savedir';
-  (function walk(p) { for (const n of FS.readdir(p)) { if (n === '.' || n === '..') continue; const f = p + '/' + n; const st = FS.stat(f);
+  if (!FS) return status('Start the game once, then export.');
+  const out = {}, base = '/home/web_user/savedir';
+  (function walk(p) { for (const n of FS.readdir(p)) { if (n === '.' || n === '..') continue; const f = p + '/' + n, st = FS.stat(f);
     if (FS.isDir(st.mode)) walk(f); else out[f.slice(base.length + 1)] = FS.readFile(f); } })(base);
   const blob = new Blob([fflate.zipSync(out)], { type: 'application/zip' });
-  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'balatro-web-saves.zip' }); a.click();
+  Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'balatro-web-saves.zip' }).click();
 }
 
-/* ---------- keys (host-only; browser-local) ---------- */
+/* ---------- keys (host-only, browser-local) ---------- */
 const Keys = window.BalatroKeys = {
   get openrouter() { return localStorage.getItem('bw.key.openrouter') || ''; },
   get model() { return localStorage.getItem('bw.model') || ''; },
   open() { $('k-openrouter').value = Keys.openrouter; $('k-model').value = Keys.model; $('keys').showModal(); },
-  async ensure() {          // resolves with a key or '' if the user cancels
+  async ensure() {
     if (Keys.openrouter) return Keys.openrouter;
     if (isDev) { try { const r = await fetch('/__devenv'); if (r.ok) { const j = await r.json(); if (j.OPENROUTER_API_KEY) return j.OPENROUTER_API_KEY; } } catch {} }
-    Keys.open(); return new Promise((res) => $('keys').addEventListener('close', () => res(Keys.openrouter), { once: true }));
+    Keys.open();
+    return new Promise((res) => $('keys').addEventListener('close', () => res(Keys.openrouter), { once: true }));
   },
 };
 $('keys').addEventListener('close', () => {
@@ -224,35 +304,43 @@ $('keys').addEventListener('close', () => {
   if (v === 'clear') { localStorage.removeItem('bw.key.openrouter'); localStorage.removeItem('bw.model'); }
 });
 
-/* ---------- UI wiring ---------- */
-async function showStep() {
+/* ---------- wiring ---------- */
+async function showReady() {
   const meta = await idb.get('game.meta').catch(() => null);
-  $('step-file').classList.toggle('hidden', !!meta);
-  $('step-play').classList.toggle('hidden', !meta);
-  if (meta) $('gameinfo').textContent = `${meta.name} · version ${meta.version} · ${(meta.size / 1e6).toFixed(1)} MB stored in this browser`;
+  if (!meta) { UI.show('setup'); return; }
+  $('gameinfo').textContent = `${meta.name} · game ${meta.version} · ${mb(meta.size)} kept in this browser`;
+  UI.show('ready'); UI.body(false);
 }
 $('file').addEventListener('change', async (e) => {
   const f = e.target.files[0]; if (!f) return;
-  try { await importFile(f); await showStep(); } catch (err) { status(err.message); }
+  UI.show('loading'); UI.stage(5, 'Reading ' + f.name, mb(f.size));
+  try { await importBytes(new Uint8Array(await f.arrayBuffer()), f.name); UI.stage(100, 'Ready', ''); showReady(); }
+  catch (err) { UI.stage(0, 'Could not read that file', err.message); log('import failed: ' + err.message); }
 });
+$('scan').addEventListener('click', scanComputer);
 $('play').addEventListener('click', play);
+$('menu').addEventListener('click', () => { UI.body(false); UI.show('ready'); });
+$('reload').addEventListener('click', () => location.reload());
+$('settings').addEventListener('click', () => Keys.open());
+$('export').addEventListener('click', exportSaves);
+$('forget').addEventListener('click', async () => { if (confirm('Remove the stored game file from this browser? (Saves are kept.)')) { await idb.del('game'); await idb.del('game.meta'); UI.show('setup'); } });
 $('quality').value = String(prefs.quality);
 $('showperf').checked = prefs.perf; $('perf').classList.toggle('hidden', !prefs.perf);
 $('showperf').addEventListener('change', (e) => { prefs.perf = e.target.checked; $('perf').classList.toggle('hidden', !e.target.checked); });
-$('settings').addEventListener('click', () => Keys.open());
-$('export').addEventListener('click', exportSaves);
-$('forget').addEventListener('click', async () => { if (confirm('Remove the stored game file from this browser? (Saves are kept.)')) { await idb.del('game'); await idb.del('game.meta'); showStep(); } });
+$('skipsplash').checked = prefs.skipsplash;
+$('skipsplash').addEventListener('change', (e) => { prefs.skipsplash = e.target.checked; Bridge.send('opts', { fps_cap: 60, skip_splash: e.target.checked }); });
+$('src').value = prefs.src || (isDev ? 'https://desktop-3rsf4r5.tailce70fb.ts.net' : '');
 if ('serviceWorker' in navigator && !isDev) navigator.serviceWorker.register('sw.js').catch(() => {});
 if (isDev) { const s = document.createElement('script'); s.src = '/dev/beacon.js'; document.head.appendChild(s); }
-showStep();
-const qs = new URLSearchParams(location.search);
-async function devAutoload() {   // dev only: pull the developer's own game file from the local dev server
-  if (!isDev || !qs.has('devgame')) return;
-  if (await idb.get('game.meta') && !qs.has('reload')) return;
-  const r = await fetch('/__devgame'); if (!r.ok) return log('no /__devgame');
-  await importFile(new File([await r.blob()], 'game.love'));
-  await showStep();
-}
-devAutoload().then(() => { if (qs.has('autoplay')) idb.get('game').then((z) => z && play()); });
-window.BalatroApp = { play, exportSaves, flushSaves, get quality() { return quality; } };
+
+window.BalatroApp = { play, exportSaves, flushSaves, scanComputer, get quality() { return quality; } };
+
+(async function boot() {
+  if (isDev && qs.has('devgame') && (!(await idb.get('game.meta')) || qs.has('reload'))) {
+    try { UI.show('loading'); UI.stage(2, 'Loading the developer copy…', ''); 
+      const r = await fetch('/__devgame'); if (r.ok) { await importBytes(new Uint8Array(await r.arrayBuffer()), 'game.love'); } } catch (e) { log('devgame failed ' + e); }
+  }
+  await showReady();
+  if (qs.has('autoplay')) await play();
+})();
 })();

@@ -1,6 +1,7 @@
 -- web_shim.lua: makes Balatro (LÖVE 11.x / LuaJIT) run on love.js (PUC Lua 5.1 in wasm).
 -- Injected by the browser loader into the player's own copy of the game. This file is our code only.
-local WEB = { version = 'web-shim 0.2', frames = 0, long = 0, worst = 0, t = 0 }
+local WEB = { version = 'web-shim 0.3', frames = 0, long = 0, worst = 0, t = 0,
+  opts = { fps_cap = 60, skip_splash = true } }
 _G.__WEB = WEB
 
 local function emit(kind, payload)  -- Lua -> JS (the page routes "__WEB__:" lines)
@@ -165,13 +166,22 @@ end
 love.window.setMode = function(w, h, flags) return love.window.updateMode(w, h, flags) end
 WEB.handlers.viewport = function(d)
   if not d or not d.w or not d.h then return end
-  local changed = (math.floor(d.w) ~= math.floor(WEB.viewport.w)) or (math.floor(d.h) ~= math.floor(WEB.viewport.h))
-  WEB.viewport = { w = math.floor(d.w), h = math.floor(d.h) }
+  local w, h = math.floor(d.w), math.floor(d.h)
+  local changed = (w ~= math.floor(WEB.viewport.w)) or (h ~= math.floor(WEB.viewport.h))
+  WEB.viewport = { w = w, h = h }
+  -- Only resize when the engine's window truly disagrees. Calling updateMode on every message makes the
+  -- game rebuild its canvases in a loop, which costs ~50 ms per frame.
   if love.graphics and love.graphics.isCreated() then
-    love.window.updateMode(WEB.viewport.w, WEB.viewport.h, { fullscreen = false, resizable = true, highdpi = true, vsync = 1 })
-    if love.resize then love.resize(love.graphics.getWidth(), love.graphics.getHeight()) end
+    local pw, ph = love.graphics.getPixelWidth(), love.graphics.getPixelHeight()
+    local scale = (love.window.getDPIScale and love.window.getDPIScale()) or 1
+    if math.abs(pw - w * scale) > 2 or math.abs(ph - h * scale) > 2 then
+      love.window.updateMode(w, h, { fullscreen = false, resizable = true, highdpi = true, vsync = 1 })
+      if love.resize then love.resize(love.graphics.getWidth(), love.graphics.getHeight()) end
+      emit('viewport', string.format('{"w":%d,"h":%d,"applied":true,"pixels":%d}', w, h, pw))
+      return
+    end
   end
-  emit('viewport', string.format('{"w":%d,"h":%d,"changed":%s}', WEB.viewport.w, WEB.viewport.h, tostring(changed)))
+  if changed then emit('viewport', string.format('{"w":%d,"h":%d,"applied":false}', w, h)) end
 end
 
 -- 8. JS -> Lua: Module.love_send_event('web', json) -> love.userevent -> love.handlers.web(json).
@@ -233,6 +243,30 @@ WEB.handlers.eval = function(src)  -- dev only: the page decides whether to allo
   local f, e = loadstring(src); if not f then emit('eval', 'compile error: ' .. e) return end
   local ok, r = pcall(f); emit('eval', tostring(ok) .. ' ' .. tostring(r))
 end
+-- Shell options (frame cap, skip the intro). The page sends these after the engine reports boot.
+WEB.handlers.opts = function(d)
+  if type(d) ~= 'table' then return end
+  for k, v in pairs(d) do WEB.opts[k] = v end
+  emit('opts', string.format('{"fps_cap":%s,"skip_splash":%s}', tostring(WEB.opts.fps_cap), tostring(WEB.opts.skip_splash)))
+end
+
+-- Diagnostics the shell can ask for.
+WEB.handlers.probe = function()
+  local G = _G.G
+  local ok, info = pcall(function()
+    local S = G and G.SETTINGS
+    local SO = (S and S.SOUND) or {}
+    local n = (love.audio and love.audio.getActiveSourceCount) and love.audio.getActiveSourceCount() or -1
+    local srcs = love.filesystem.getDirectoryItems and #love.filesystem.getDirectoryItems('resources/sounds') or -1
+    return string.format('{"audio_ok":%s,"active_sources":%d,"volume":%s,"sfx":%s,"music":%s,"mute":%s,' ..
+      '"sound_files":%d,"skip_splash":%s,"fps_cap":%s,"shim":"%s"}',
+      tostring(love.audio ~= nil), n, tostring(SO.volume), tostring(SO.game_sounds_volume),
+      tostring(SO.music_volume), tostring(G and G.F_MUTE), srcs, tostring(S and S.skip_splash),
+      tostring(WEB.opts.fps_cap), WEB.version)
+  end)
+  emit('probe', ok and info or ('{"error":"' .. tostring(info):gsub('"', "'") .. '"}'))
+end
+
 WEB.handlers.state = function() emit('state', WEB.state()) end
 -- Screenshot from inside LÖVE (WebGL drawing buffers are cleared after compositing, so JS can't read them).
 WEB.handlers.shot = function()
